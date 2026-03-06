@@ -1,6 +1,6 @@
 {
   "site": "office",
-  "rotateSeconds": 15,
+  "rotateSeconds": 35,
   "refreshMinutes": 15,
   "items": [
     {
@@ -59,4 +59,5 @@
   ]
 
 }
+
 
