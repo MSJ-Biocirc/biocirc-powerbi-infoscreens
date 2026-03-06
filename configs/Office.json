@@ -1,5 +1,5 @@
 {
-  "site": "Office",
+  "site": "office",
   "rotateSeconds": 15,
   "refreshMinutes": 15,
   "items": [
@@ -63,4 +63,5 @@
       "pageName": "34c280e9866e996820d4"
     }
   ]
+
 }
