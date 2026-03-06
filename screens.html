@@ -25,6 +25,16 @@ border:none;
 display:none;
 }
 
+#loading{
+position:absolute;
+top:50%;
+left:50%;
+transform:translate(-50%,-50%);
+color:white;
+font-size:26px;
+opacity:0.6;
+}
+
 #error{
 position:absolute;
 top:20px;
@@ -34,7 +44,6 @@ background:#900;
 padding:15px;
 font-size:18px;
 display:none;
-z-index:100;
 }
 
 </style>
@@ -43,11 +52,10 @@ z-index:100;
 
 <body>
 
+<div id="loading">Loading reports...</div>
 <div id="error"></div>
 
-<iframe id="frame1"></iframe>
-<iframe id="frame2"></iframe>
-<iframe id="frame3"></iframe>
+<div id="frames"></div>
 
 <script>
 
@@ -56,9 +64,7 @@ z-index:100;
 //////////////////////////////////////////////////////
 
 const tenantId = "884bfe45-dede-4490-9006-35f088544fba";
-
 const defaultSite = "iglsoe";
-
 const configFolder = "configs";
 
 const embedParams =
@@ -116,7 +122,6 @@ return new Promise(r=>setTimeout(r,ms));
 (async function(){
 
 const site = getSiteFromUrl();
-
 const configPath = `${configFolder}/${site}.json`;
 
 console.log("Loading site:",site);
@@ -145,10 +150,8 @@ return;
 
 }
 
-const rotateSeconds = Number(config.rotateSeconds || 20);
-
+const rotateSeconds = Number(config.rotateSeconds || 30);
 const refreshMinutes = Number(config.refreshMinutes || 30);
-
 const items = Array.isArray(config.items)?config.items:[];
 
 if(items.length === 0){
@@ -165,91 +168,71 @@ return;
 console.log("Reports loaded:",items.length);
 
 //////////////////////////////////////////////////////
-// FRAMES
+// CREATE IFRAMES (PRELOAD)
 //////////////////////////////////////////////////////
 
-const frames = [
-document.getElementById("frame1"),
-document.getElementById("frame2"),
-document.getElementById("frame3")
-];
+const framesDiv = document.getElementById("frames");
 
-let currentReport = 0;
-let showingFrame = 0;
+let frames = [];
+
+items.forEach((item,i)=>{
+
+const f = document.createElement("iframe");
+
+f.src = buildEmbedUrl(item);
+
+framesDiv.appendChild(f);
+
+frames.push(f);
+
+});
 
 //////////////////////////////////////////////////////
-// LOAD FIRST REPORTS
+// WAIT FOR INITIAL LOAD
 //////////////////////////////////////////////////////
 
-frames[0].src = buildEmbedUrl(items[0]);
+console.log("Preloading reports...");
+
+await sleep(20000); // første load
+
+document.getElementById("loading").style.display="none";
+
 frames[0].style.display="block";
 
-if(items.length>1)
-frames[1].src = buildEmbedUrl(items[1]);
-
-if(items.length>2)
-frames[2].src = buildEmbedUrl(items[2]);
-
 //////////////////////////////////////////////////////
-// ROTATION (SMART PRELOAD)
+// ROTATION (INSTANT)
 //////////////////////////////////////////////////////
+
+let current = 0;
 
 function rotate(){
 
-// næste rapport
-let nextReport = currentReport + 1;
+frames[current].style.display="none";
 
-if(nextReport >= items.length){
-nextReport = 0;
+current++;
+
+if(current >= frames.length){
+current = 0;
 }
 
-// næste frame
-let nextFrame = showingFrame + 1;
-
-if(nextFrame > 2){
-nextFrame = 0;
-}
-
-const frame = frames[nextFrame];
-
-const nextUrl = buildEmbedUrl(items[nextReport]);
-
-// preload rapport hvis nødvendig
-if(frame.src !== nextUrl){
-
-frame.src = nextUrl;
-
-}
-
-// vent så Power BI kan loade
-setTimeout(()=>{
-
-frames.forEach(f=>f.style.display="none");
-
-frame.style.display="block";
-
-currentReport = nextReport;
-showingFrame = nextFrame;
-
-},4000);
+frames[current].style.display="block";
 
 }
 
 //////////////////////////////////////////////////////
-// REFRESH
+// BACKGROUND REFRESH
 //////////////////////////////////////////////////////
 
 async function refreshReports(){
 
-console.log("Refreshing reports");
+console.log("Background refresh starting");
 
 for(let i=0;i<frames.length;i++){
 
-const frame=frames[i];
+if(i === current) continue;
 
-const url=frame.src;
-
-if(!url) continue;
+const frame = frames[i];
+const url = frame.src;
 
 frame.src="about:blank";
 
@@ -257,9 +240,11 @@ await sleep(800);
 
 frame.src=url;
 
-await sleep(1500);
+await sleep(4000);
 
 }
+
+console.log("Background refresh done");
 
 }
 
@@ -285,6 +270,7 @@ refresh: ${refreshMinutes}m
 
 </body>
 </html>
+
 
 
 
