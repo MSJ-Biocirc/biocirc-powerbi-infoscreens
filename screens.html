@@ -32,7 +32,7 @@ left:50%;
 transform:translate(-50%,-50%);
 color:white;
 font-size:26px;
-opacity:0.6;
+opacity:0.7;
 }
 
 #error{
@@ -44,6 +44,7 @@ background:#900;
 padding:15px;
 font-size:18px;
 display:none;
+z-index:100;
 }
 
 </style>
@@ -168,32 +169,32 @@ return;
 console.log("Reports loaded:",items.length);
 
 //////////////////////////////////////////////////////
-// CREATE IFRAMES (PRELOAD)
+// OPRET IFRAMES
 //////////////////////////////////////////////////////
 
 const framesDiv = document.getElementById("frames");
 
 let frames = [];
 
-items.forEach((item,i)=>{
+items.forEach((item)=>{
 
-const f = document.createElement("iframe");
+const iframe = document.createElement("iframe");
 
-f.src = buildEmbedUrl(item);
+iframe.src = buildEmbedUrl(item);
 
-framesDiv.appendChild(f);
+framesDiv.appendChild(iframe);
 
-frames.push(f);
+frames.push(iframe);
 
 });
 
 //////////////////////////////////////////////////////
-// WAIT FOR INITIAL LOAD
+// PRELOAD ALLE RAPPORTER
 //////////////////////////////////////////////////////
 
 console.log("Preloading reports...");
 
-await sleep(20000); // første load
+await sleep(20000);
 
 document.getElementById("loading").style.display="none";
 
@@ -203,24 +204,24 @@ frames[0].style.display="block";
 // ROTATION (INSTANT)
 //////////////////////////////////////////////////////
 
-let current = 0;
+let currentIndex = 0;
 
 function rotate(){
 
-frames[current].style.display="none";
+frames[currentIndex].style.display="none";
 
-current++;
+currentIndex++;
 
-if(current >= frames.length){
-current = 0;
+if(currentIndex >= frames.length){
+currentIndex = 0;
 }
 
-frames[current].style.display="block";
+frames[currentIndex].style.display="block";
 
 }
 
 //////////////////////////////////////////////////////
-// BACKGROUND REFRESH
+// BAGGRUNDS REFRESH
 //////////////////////////////////////////////////////
 
 async function refreshReports(){
@@ -229,14 +230,14 @@ console.log("Background refresh starting");
 
 for(let i=0;i<frames.length;i++){
 
-if(i === current) continue;
+if(i === currentIndex) continue;
 
 const frame = frames[i];
 const url = frame.src;
 
 frame.src="about:blank";
 
-await sleep(800);
+await sleep(1000);
 
 frame.src=url;
 
@@ -252,9 +253,9 @@ console.log("Background refresh done");
 // TIMERS
 //////////////////////////////////////////////////////
 
-setInterval(rotate,rotateSeconds*1000);
+setInterval(rotate, rotateSeconds*1000);
 
-setInterval(refreshReports,refreshMinutes*60*1000);
+setInterval(refreshReports, refreshMinutes*60*1000);
 
 console.log(`
 Infoscreen started
@@ -270,6 +271,7 @@ refresh: ${refreshMinutes}m
 
 </body>
 </html>
+
 
 
 
