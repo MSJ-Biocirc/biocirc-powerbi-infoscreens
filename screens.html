@@ -34,6 +34,7 @@ background:#900;
 padding:15px;
 font-size:18px;
 display:none;
+z-index:100;
 }
 
 </style>
@@ -89,9 +90,7 @@ let url =
 url += embedParams;
 
 if(item.pageName && item.pageName.trim() !== ""){
-
 url += "&pageName="+encodeURIComponent(item.pageName);
-
 }
 
 return url;
@@ -146,7 +145,7 @@ return;
 
 }
 
-const rotateSeconds = Number(config.rotateSeconds || 15);
+const rotateSeconds = Number(config.rotateSeconds || 20);
 
 const refreshMinutes = Number(config.refreshMinutes || 30);
 
@@ -192,30 +191,47 @@ if(items.length>2)
 frames[2].src = buildEmbedUrl(items[2]);
 
 //////////////////////////////////////////////////////
-// ROTATION
+// ROTATION (SMART PRELOAD)
 //////////////////////////////////////////////////////
 
 function rotate(){
 
-currentReport++;
+// næste rapport
+let nextReport = currentReport + 1;
 
-if(currentReport >= items.length){
-currentReport = 0;
+if(nextReport >= items.length){
+nextReport = 0;
 }
 
-showingFrame++;
+// næste frame
+let nextFrame = showingFrame + 1;
 
-if(showingFrame>2){
-showingFrame=0;
+if(nextFrame > 2){
+nextFrame = 0;
 }
 
-const frame = frames[showingFrame];
+const frame = frames[nextFrame];
 
-frame.src = buildEmbedUrl(items[currentReport]);
+const nextUrl = buildEmbedUrl(items[nextReport]);
+
+// preload rapport hvis nødvendig
+if(frame.src !== nextUrl){
+
+frame.src = nextUrl;
+
+}
+
+// vent så Power BI kan loade
+setTimeout(()=>{
 
 frames.forEach(f=>f.style.display="none");
 
 frame.style.display="block";
+
+currentReport = nextReport;
+showingFrame = nextFrame;
+
+},4000);
 
 }
 
@@ -269,5 +285,6 @@ refresh: ${refreshMinutes}m
 
 </body>
 </html>
+
 
 
