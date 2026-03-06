@@ -1,0 +1,44 @@
+{
+  "site": "Vesthimmerland",
+  "rotateSeconds": 15,
+  "refreshMinutes": 15,
+  "items": [
+    {
+      "name": "Methane Production",
+      "reportId": "6e8f43d2-a635-4e70-bf0d-fd700e0ed0ed",
+      "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
+      "pageName": "ReportSectionf24e0e543456b82cf561"
+    },
+    {
+      "name": "Process Analysis - Acid Analysis",
+      "reportId": "1e66e1cc-c301-4be7-8792-64c184d59fc9",
+      "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
+      "pageName": "cc6f0385e68c0ee39e90"
+    },
+    {
+      "name": "Process Analysis - Dry Matter",
+      "reportId": "1e66e1cc-c301-4be7-8792-64c184d59fc9",
+      "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
+      "pageName": "e00ce739a889a2aba44a"
+    },
+     {
+      "name": "Dry Matter Quality Overview",
+      "reportId": "45c56e4d-7787-4fa5-8ad9-39cc09a7920d",
+      "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
+      "pageName": "2f8e1f340ed0a6363882"
+    },
+     {
+      "name": "Gas Prices and Futures",
+      "reportId": "966a01f4-7636-473a-9cd2-405a90c7698f",
+      "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
+      "pageName": "522bfd9d6913db99bc1e"
+    },
+     {
+      "name": "QHSE - Hændelser",
+      "reportId": "73f539e5-5847-440d-97d8-ea606c98d851",
+      "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
+      "pageName": "66704585b705aa087077"
+    }
+
+  ]
+}

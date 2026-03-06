@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<meta charset="UTF-8" />
+<title>BioCirc Power BI Infoscreen</title>
+
+<style>
+
+html,body{
+margin:0;
+padding:0;
+background:black;
+overflow:hidden;
+font-family:Segoe UI;
+}
+
+iframe{
+position:absolute;
+top:0;
+left:0;
+width:100vw;
+height:100vh;
+border:none;
+display:none;
+}
+
+#error{
+position:absolute;
+top:20px;
+left:20px;
+color:white;
+background:#900;
+padding:15px;
+font-size:18px;
+display:none;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div id="error"></div>
+
+<iframe id="frame1"></iframe>
+<iframe id="frame2"></iframe>
+<iframe id="frame3"></iframe>
+
+<script>
+
+//////////////////////////////////////////////////////
+// KONFIG
+//////////////////////////////////////////////////////
+
+const tenantId = "884bfe45-dede-4490-9006-35f088544fba";
+
+const defaultSite = "iglsoe";
+
+const configFolder = "configs";
+
+const embedParams =
+"&navContentPaneEnabled=false"+
+"&filterPaneEnabled=false"+
+"&actionBarEnabled=false"+
+"&viewMode=fitToPage";
+
+//////////////////////////////////////////////////////
+// HJÆLPERE
+//////////////////////////////////////////////////////
+
+function getSiteFromUrl(){
+
+const p = new URLSearchParams(window.location.search);
+return (p.get("site") || defaultSite).toLowerCase();
+
+}
+
+function buildEmbedUrl(item){
+
+let url =
+`https://app.fabric.microsoft.com/reportEmbed?`+
+`reportId=${encodeURIComponent(item.reportId)}`+
+`&groupId=${encodeURIComponent(item.groupId)}`+
+`&autoAuth=true`+
+`&ctid=${encodeURIComponent(tenantId)}`;
+
+url += embedParams;
+
+if(item.pageName && item.pageName.trim() !== ""){
+
+url += "&pageName="+encodeURIComponent(item.pageName);
+
+}
+
+return url;
+
+}
+
+function showError(msg){
+
+const el=document.getElementById("error");
+el.innerHTML=msg;
+el.style.display="block";
+
+}
+
+function sleep(ms){
+return new Promise(r=>setTimeout(r,ms));
+}
+
+//////////////////////////////////////////////////////
+// MAIN
+//////////////////////////////////////////////////////
+
+(async function(){
+
+const site = getSiteFromUrl();
+
+const configPath = `${configFolder}/${site}.json`;
+
+console.log("Loading site:",site);
+
+let config;
+
+try{
+
+const res = await fetch(configPath,{cache:"no-store"});
+
+if(!res.ok) throw new Error("HTTP "+res.status);
+
+config = await res.json();
+
+}
+catch(e){
+
+console.error(e);
+
+showError(`
+<h2>Kunne ikke loade config</h2>
+<p>${configPath}</p>
+`);
+
+return;
+
+}
+
+const rotateSeconds = Number(config.rotateSeconds || 15);
+
+const refreshMinutes = Number(config.refreshMinutes || 30);
+
+const items = Array.isArray(config.items)?config.items:[];
+
+if(items.length === 0){
+
+showError(`
+<h2>Ingen rapporter i config</h2>
+<p>${configPath}</p>
+`);
+
+return;
+
+}
+
+console.log("Reports loaded:",items.length);
+
+//////////////////////////////////////////////////////
+// FRAMES
+//////////////////////////////////////////////////////
+
+const frames = [
+document.getElementById("frame1"),
+document.getElementById("frame2"),
+document.getElementById("frame3")
+];
+
+let currentReport = 0;
+let showingFrame = 0;
+
+//////////////////////////////////////////////////////
+// LOAD FIRST REPORTS
+//////////////////////////////////////////////////////
+
+frames[0].src = buildEmbedUrl(items[0]);
+frames[0].style.display="block";
+
+if(items.length>1)
+frames[1].src = buildEmbedUrl(items[1]);
+
+if(items.length>2)
+frames[2].src = buildEmbedUrl(items[2]);
+
+//////////////////////////////////////////////////////
+// ROTATION
+//////////////////////////////////////////////////////
+
+function rotate(){
+
+currentReport++;
+
+if(currentReport >= items.length){
+currentReport = 0;
+}
+
+showingFrame++;
+
+if(showingFrame>2){
+showingFrame=0;
+}
+
+const frame = frames[showingFrame];
+
+frame.src = buildEmbedUrl(items[currentReport]);
+
+frames.forEach(f=>f.style.display="none");
+
+frame.style.display="block";
+
+}
+
+//////////////////////////////////////////////////////
+// REFRESH
+//////////////////////////////////////////////////////
+
+async function refreshReports(){
+
+console.log("Refreshing reports");
+
+for(let i=0;i<frames.length;i++){
+
+const frame=frames[i];
+
+const url=frame.src;
+
+if(!url) continue;
+
+frame.src="about:blank";
+
+await sleep(800);
+
+frame.src=url;
+
+await sleep(1500);
+
+}
+
+}
+
+//////////////////////////////////////////////////////
+// TIMERS
+//////////////////////////////////////////////////////
+
+setInterval(rotate,rotateSeconds*1000);
+
+setInterval(refreshReports,refreshMinutes*60*1000);
+
+console.log(`
+Infoscreen started
+site: ${site}
+reports: ${items.length}
+rotate: ${rotateSeconds}s
+refresh: ${refreshMinutes}m
+`);
+
+})();
+
+</script>
+
+</body>
+</html>
+
+
