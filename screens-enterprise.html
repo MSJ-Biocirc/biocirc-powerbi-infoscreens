@@ -117,29 +117,67 @@ async function loadSiteConfig(site) {
     return await response.json();
 }
 
-// Temporary function.
-// In the next step, this will call the backend instead.
+// Enterprise-ready function.
+// First it tries to call backend /api/getEmbedConfig.
+// On GitHub Pages this will fail, so it falls back to the old iframe/autoAuth mode.
 async function getEmbedConfig(item) {
-    let embedUrl =
-        `https://app.fabric.microsoft.com/reportEmbed?` +
-        `reportId=${encodeURIComponent(item.reportId)}` +
-        `&groupId=${encodeURIComponent(item.groupId)}` +
-        `&autoAuth=true` +
-        `&ctid=${encodeURIComponent(tenantId)}`;
+    try {
+        const response = await fetch("/api/getEmbedConfig", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                name: item.name,
+                reportId: item.reportId,
+                groupId: item.groupId,
+                pageName: item.pageName
+            })
+        });
 
-    embedUrl += embedParams;
+        if (!response.ok) {
+            throw new Error(`Backend returned HTTP ${response.status}`);
+        }
 
-    if (item.pageName && item.pageName.trim() !== "") {
-        embedUrl += "&pageName=" + encodeURIComponent(item.pageName);
+        const backendConfig = await response.json();
+
+        console.log("Backend embed config loaded:", backendConfig);
+
+        return {
+            name: backendConfig.name || item.name,
+            reportId: backendConfig.reportId || item.reportId,
+            groupId: backendConfig.groupId || item.groupId,
+            pageName: backendConfig.pageName || item.pageName,
+            embedUrl: backendConfig.embedUrl,
+            accessToken: backendConfig.accessToken,
+            mode: backendConfig.mode || "backend"
+        };
     }
+    catch (error) {
+        console.warn("Backend unavailable. Falling back to MVP iframe mode.", error);
 
-    return {
-        name: item.name,
-        reportId: item.reportId,
-        groupId: item.groupId,
-        pageName: item.pageName,
-        embedUrl: embedUrl
-    };
+        let embedUrl =
+            `https://app.fabric.microsoft.com/reportEmbed?` +
+            `reportId=${encodeURIComponent(item.reportId)}` +
+            `&groupId=${encodeURIComponent(item.groupId)}` +
+            `&autoAuth=true` +
+            `&ctid=${encodeURIComponent(tenantId)}`;
+
+        embedUrl += embedParams;
+
+        if (item.pageName && item.pageName.trim() !== "") {
+            embedUrl += "&pageName=" + encodeURIComponent(item.pageName);
+        }
+
+        return {
+            name: item.name,
+            reportId: item.reportId,
+            groupId: item.groupId,
+            pageName: item.pageName,
+            embedUrl: embedUrl,
+            mode: "fallback-iframe"
+        };
+    }
 }
 
 //////////////////////////////////////////////////////
@@ -189,9 +227,19 @@ async function getEmbedConfig(item) {
     for (const item of items) {
         const embedConfig = await getEmbedConfig(item);
 
+        if (!embedConfig.embedUrl) {
+            showError(`
+                <h2>Embed URL mangler</h2>
+                <p>Report: ${item.name || "Unknown"}</p>
+            `);
+
+            return;
+        }
+
         const iframe = document.createElement("iframe");
         iframe.src = embedConfig.embedUrl;
         iframe.dataset.name = embedConfig.name;
+        iframe.dataset.mode = embedConfig.mode || "unknown";
 
         framesDiv.appendChild(iframe);
         frames.push(iframe);
@@ -219,7 +267,7 @@ async function getEmbedConfig(item) {
         frames[currentIndex].style.display = "block";
 
         setStatus(
-            `${site} | ${frames[currentIndex].dataset.name || "Report"} | ${currentIndex + 1}/${frames.length}`
+            `${site} | ${frames[currentIndex].dataset.name || "Report"} | ${currentIndex + 1}/${frames.length} | ${frames[currentIndex].dataset.mode || "unknown"}`
         );
     }
 
@@ -247,7 +295,9 @@ async function getEmbedConfig(item) {
     setInterval(rotate, rotateSeconds * 1000);
     setInterval(refreshReports, refreshMinutes * 60 * 1000);
 
-    setStatus(`${site} | ${frames[0].dataset.name || "Report"} | 1/${frames.length}`);
+    setStatus(
+        `${site} | ${frames[0].dataset.name || "Report"} | 1/${frames.length} | ${frames[0].dataset.mode || "unknown"}`
+    );
 
     console.log(`
 Infoscreen enterprise POC started
