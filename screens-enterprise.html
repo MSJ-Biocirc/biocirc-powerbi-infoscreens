@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<meta charset="UTF-8" />
+<title>BioCirc Power BI Infoscreen - Enterprise POC</title>
+
+<style>
+html, body {
+    margin: 0;
+    padding: 0;
+    background: black;
+    overflow: hidden;
+    font-family: Segoe UI, Arial, sans-serif;
+}
+
+iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    border: none;
+    display: none;
+}
+
+#loading {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-size: 26px;
+    opacity: 0.7;
+}
+
+#error {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    color: white;
+    background: #900;
+    padding: 15px;
+    font-size: 18px;
+    display: none;
+    z-index: 100;
+}
+
+#status {
+    position: absolute;
+    bottom: 12px;
+    right: 18px;
+    color: white;
+    font-size: 13px;
+    opacity: 0.45;
+    z-index: 50;
+}
+</style>
+</head>
+
+<body>
+
+<div id="loading">Loading reports...</div>
+<div id="error"></div>
+<div id="status"></div>
+<div id="frames"></div>
+
+<script>
+//////////////////////////////////////////////////////
+// CONFIG
+//////////////////////////////////////////////////////
+
+const tenantId = "884bfe45-dede-4490-9006-35f088544fba";
+const defaultSite = "Vesthimmerland";
+const configFolder = "configs";
+
+// Temporary MVP embed params.
+// Later this will be replaced with Power BI Embedded token config.
+const embedParams =
+    "&navContentPaneEnabled=false" +
+    "&filterPaneEnabled=false" +
+    "&actionBarEnabled=false" +
+    "&viewMode=fitToPage";
+
+//////////////////////////////////////////////////////
+// HELPERS
+//////////////////////////////////////////////////////
+
+function getSiteFromUrl() {
+    const p = new URLSearchParams(window.location.search);
+    return p.get("site") || defaultSite;
+}
+
+function showError(message) {
+    const el = document.getElementById("error");
+    el.innerHTML = message;
+    el.style.display = "block";
+}
+
+function setStatus(message) {
+    document.getElementById("status").innerText = message;
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function loadSiteConfig(site) {
+    const configPath = `${configFolder}/${site}.json`;
+
+    const response = await fetch(configPath, { cache: "no-store" });
+
+    if (!response.ok) {
+        throw new Error(`Could not load config: ${configPath}. HTTP ${response.status}`);
+    }
+
+    return await response.json();
+}
+
+// Temporary function.
+// In the next step, this will call the backend instead.
+async function getEmbedConfig(item) {
+    let embedUrl =
+        `https://app.fabric.microsoft.com/reportEmbed?` +
+        `reportId=${encodeURIComponent(item.reportId)}` +
+        `&groupId=${encodeURIComponent(item.groupId)}` +
+        `&autoAuth=true` +
+        `&ctid=${encodeURIComponent(tenantId)}`;
+
+    embedUrl += embedParams;
+
+    if (item.pageName && item.pageName.trim() !== "") {
+        embedUrl += "&pageName=" + encodeURIComponent(item.pageName);
+    }
+
+    return {
+        name: item.name,
+        reportId: item.reportId,
+        groupId: item.groupId,
+        pageName: item.pageName,
+        embedUrl: embedUrl
+    };
+}
+
+//////////////////////////////////////////////////////
+// MAIN
+//////////////////////////////////////////////////////
+
+(async function () {
+    const site = getSiteFromUrl();
+
+    console.log("Loading site:", site);
+    setStatus(`Loading site: ${site}`);
+
+    let config;
+
+    try {
+        config = await loadSiteConfig(site);
+    }
+    catch (error) {
+        console.error(error);
+
+        showError(`
+            <h2>Kunne ikke loade config</h2>
+            <p>${error.message}</p>
+        `);
+
+        return;
+    }
+
+    const rotateSeconds = Number(config.rotateSeconds || 30);
+    const refreshMinutes = Number(config.refreshMinutes || 30);
+    const items = Array.isArray(config.items) ? config.items : [];
+
+    if (items.length === 0) {
+        showError(`
+            <h2>Ingen rapporter i config</h2>
+            <p>Site: ${site}</p>
+        `);
+
+        return;
+    }
+
+    console.log("Reports loaded:", items.length);
+
+    const framesDiv = document.getElementById("frames");
+    const frames = [];
+
+    for (const item of items) {
+        const embedConfig = await getEmbedConfig(item);
+
+        const iframe = document.createElement("iframe");
+        iframe.src = embedConfig.embedUrl;
+        iframe.dataset.name = embedConfig.name;
+
+        framesDiv.appendChild(iframe);
+        frames.push(iframe);
+    }
+
+    console.log("Preloading reports...");
+    setStatus(`Preloading ${items.length} reports for ${site}`);
+
+    await sleep(20000);
+
+    document.getElementById("loading").style.display = "none";
+    frames[0].style.display = "block";
+
+    let currentIndex = 0;
+
+    function rotate() {
+        frames[currentIndex].style.display = "none";
+
+        currentIndex++;
+
+        if (currentIndex >= frames.length) {
+            currentIndex = 0;
+        }
+
+        frames[currentIndex].style.display = "block";
+
+        setStatus(
+            `${site} | ${frames[currentIndex].dataset.name || "Report"} | ${currentIndex + 1}/${frames.length}`
+        );
+    }
+
+    async function refreshReports() {
+        console.log("Background refresh starting");
+
+        for (let i = 0; i < frames.length; i++) {
+            if (i === currentIndex) continue;
+
+            const frame = frames[i];
+            const url = frame.src;
+
+            frame.src = "about:blank";
+
+            await sleep(1000);
+
+            frame.src = url;
+
+            await sleep(4000);
+        }
+
+        console.log("Background refresh done");
+    }
+
+    setInterval(rotate, rotateSeconds * 1000);
+    setInterval(refreshReports, refreshMinutes * 60 * 1000);
+
+    setStatus(`${site} | ${frames[0].dataset.name || "Report"} | 1/${frames.length}`);
+
+    console.log(`
+Infoscreen enterprise POC started
+site: ${site}
+reports: ${items.length}
+rotate: ${rotateSeconds}s
+refresh: ${refreshMinutes}m
+`);
+})();
+</script>
+
+</body>
+</html>
