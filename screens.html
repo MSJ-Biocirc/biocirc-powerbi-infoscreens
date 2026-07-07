@@ -81,7 +81,7 @@ const embedParams =
 function getSiteFromUrl(){
 
 const p = new URLSearchParams(window.location.search);
-return (p.get("site") || defaultSite).toLowerCase();
+return p.get("site") || defaultSite;
 
 }
 
