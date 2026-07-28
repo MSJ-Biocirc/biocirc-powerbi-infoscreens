@@ -153,9 +153,14 @@ const configFolder = "configs";
 // HELPERS
 //////////////////////////////////////////////////////
 
-function getSiteFromUrl() {
+function getUrlParams() {
     const p = new URLSearchParams(window.location.search);
-    return p.get("site") || defaultSite;
+
+    return {
+        site: p.get("site") || defaultSite,
+        device: p.get("device") || "",
+        key: p.get("key") || ""
+    };
 }
 
 function showError(message) {
@@ -205,19 +210,30 @@ async function fetchJson(url, options = {}) {
     }
 
     if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${JSON.stringify(body)}`);
+        let message = `HTTP ${response.status}`;
+
+        if (body && body.error) {
+            message += `: ${body.error}`;
+        } else {
+            message += `: ${JSON.stringify(body)}`;
+        }
+
+        throw new Error(message);
     }
 
     return body;
 }
 
-async function getEmbedConfig(item) {
+async function getEmbedConfig(item, accessContext) {
     return fetchJson("/api/getEmbedConfig", {
         method: "POST",
         headers: {
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
+            site: accessContext.site,
+            device: accessContext.device,
+            key: accessContext.key,
             name: item.name,
             reportId: item.reportId,
             groupId: item.groupId,
@@ -300,11 +316,22 @@ function createReportContainer(item) {
 //////////////////////////////////////////////////////
 
 (async function () {
-    const site = getSiteFromUrl();
+    const accessContext = getUrlParams();
+    const site = accessContext.site;
     const configPath = `${configFolder}/${site}.json`;
 
     console.log("Loading site:", site);
+    console.log("Device:", accessContext.device);
     console.log("Config path:", configPath);
+
+    if (!accessContext.device || !accessContext.key) {
+        showError(
+            "Mangler device eller key i URL.\n\n" +
+            "Forventet format:\n" +
+            "?site=office&device=Office-Screen-01&key=..."
+        );
+        return;
+    }
 
     let config;
 
@@ -347,7 +374,7 @@ function createReportContainer(item) {
 
             console.log("Getting embed config for:", item.name);
 
-            const embedConfig = await getEmbedConfig(item);
+            const embedConfig = await getEmbedConfig(item, accessContext);
             const container = createReportContainer(item);
             const report = embedReport(container, embedConfig);
 
@@ -421,7 +448,7 @@ function createReportContainer(item) {
             const reportInfo = reports[i];
 
             try {
-                const newEmbedConfig = await getEmbedConfig(reportInfo.item);
+                const newEmbedConfig = await getEmbedConfig(reportInfo.item, accessContext);
 
                 powerbi.reset(reportInfo.container);
 
@@ -476,6 +503,7 @@ function createReportContainer(item) {
     console.log(`
 Infoscreen enterprise started
 site: ${site}
+device: ${accessContext.device}
 reports: ${items.length}
 rotate: ${rotateSeconds}s
 refresh: ${refreshMinutes}m
