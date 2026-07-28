@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html>
-
 <head>
 <meta charset="UTF-8" />
-<title>BioCirc Power BI Infoscreen - Enterprise POC</title>
+<title>BioCirc Power BI Infoscreen - Enterprise</title>
+
+<script src="https://cdn.jsdelivr.net/npm/powerbi-client@2.23.1/dist/powerbi.min.js"></script>
 
 <style>
 html, body {
@@ -14,14 +15,14 @@ html, body {
     font-family: Segoe UI, Arial, sans-serif;
 }
 
-iframe {
+.report-frame {
     position: absolute;
     top: 0;
     left: 0;
     width: 100vw;
     height: 100vh;
-    border: none;
     display: none;
+    background: black;
 }
 
 #loading {
@@ -32,28 +33,21 @@ iframe {
     color: white;
     font-size: 26px;
     opacity: 0.7;
+    z-index: 50;
 }
 
 #error {
     position: absolute;
     top: 20px;
     left: 20px;
+    right: 20px;
     color: white;
     background: #900;
     padding: 15px;
     font-size: 18px;
     display: none;
     z-index: 100;
-}
-
-#status {
-    position: absolute;
-    bottom: 12px;
-    right: 18px;
-    color: white;
-    font-size: 13px;
-    opacity: 0.45;
-    z-index: 50;
+    white-space: pre-wrap;
 }
 </style>
 </head>
@@ -62,7 +56,6 @@ iframe {
 
 <div id="loading">Loading reports...</div>
 <div id="error"></div>
-<div id="status"></div>
 <div id="frames"></div>
 
 <script>
@@ -70,17 +63,8 @@ iframe {
 // CONFIG
 //////////////////////////////////////////////////////
 
-const tenantId = "884bfe45-dede-4490-9006-35f088544fba";
 const defaultSite = "Vesthimmerland";
 const configFolder = "configs";
-
-// Temporary MVP embed params.
-// Later this will be replaced with Power BI Embedded token config.
-const embedParams =
-    "&navContentPaneEnabled=false" +
-    "&filterPaneEnabled=false" +
-    "&actionBarEnabled=false" +
-    "&viewMode=fitToPage";
 
 //////////////////////////////////////////////////////
 // HELPERS
@@ -88,96 +72,99 @@ const embedParams =
 
 function getSiteFromUrl() {
     const p = new URLSearchParams(window.location.search);
-    return p.get("site") || defaultSite;
+    return (p.get("site") || defaultSite).toLowerCase();
 }
 
 function showError(message) {
     const el = document.getElementById("error");
-    el.innerHTML = message;
+    el.textContent = message;
     el.style.display = "block";
-}
-
-function setStatus(message) {
-    document.getElementById("status").innerText = message;
+    console.error(message);
 }
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function loadSiteConfig(site) {
-    const configPath = `${configFolder}/${site}.json`;
-
-    const response = await fetch(configPath, { cache: "no-store" });
-
-    if (!response.ok) {
-        throw new Error(`Could not load config: ${configPath}. HTTP ${response.status}`);
-    }
-
-    return await response.json();
-}
-
-// Enterprise-ready function.
-// First it tries to call backend /api/getEmbedConfig.
-// On GitHub Pages this will fail, so it falls back to the old iframe/autoAuth mode.
 async function getEmbedConfig(item) {
-    try {
-        const response = await fetch("/api/getEmbedConfig", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                name: item.name,
-                reportId: item.reportId,
-                groupId: item.groupId,
-                pageName: item.pageName
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`Backend returned HTTP ${response.status}`);
-        }
-
-        const backendConfig = await response.json();
-
-        console.log("Backend embed config loaded:", backendConfig);
-
-        return {
-            name: backendConfig.name || item.name,
-            reportId: backendConfig.reportId || item.reportId,
-            groupId: backendConfig.groupId || item.groupId,
-            pageName: backendConfig.pageName || item.pageName,
-            embedUrl: backendConfig.embedUrl,
-            accessToken: backendConfig.accessToken,
-            mode: backendConfig.mode || "backend"
-        };
-    }
-    catch (error) {
-        console.warn("Backend unavailable. Falling back to MVP iframe mode.", error);
-
-        let embedUrl =
-            `https://app.fabric.microsoft.com/reportEmbed?` +
-            `reportId=${encodeURIComponent(item.reportId)}` +
-            `&groupId=${encodeURIComponent(item.groupId)}` +
-            `&autoAuth=true` +
-            `&ctid=${encodeURIComponent(tenantId)}`;
-
-        embedUrl += embedParams;
-
-        if (item.pageName && item.pageName.trim() !== "") {
-            embedUrl += "&pageName=" + encodeURIComponent(item.pageName);
-        }
-
-        return {
+    const response = await fetch("/api/getEmbedConfig", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
             name: item.name,
             reportId: item.reportId,
             groupId: item.groupId,
-            pageName: item.pageName,
-            embedUrl: embedUrl,
-            mode: "fallback-iframe"
-        };
+            pageName: item.pageName
+        })
+    });
+
+    const text = await response.text();
+
+    let body;
+    try {
+        body = text ? JSON.parse(text) : null;
+    } catch {
+        body = text;
     }
+
+    if (!response.ok) {
+        throw new Error("Backend returned HTTP " + response.status + ": " + JSON.stringify(body));
+    }
+
+    return body;
+}
+
+function embedReport(container, embedConfig) {
+    const models = window["powerbi-client"].models;
+
+    const config = {
+        type: "report",
+        id: embedConfig.reportId,
+        embedUrl: embedConfig.embedUrl,
+        accessToken: embedConfig.accessToken,
+        tokenType: models.TokenType.Embed,
+        pageName: embedConfig.pageName,
+        permissions: models.Permissions.Read,
+        settings: {
+            panes: {
+                filters: {
+                    visible: false
+                },
+                pageNavigation: {
+                    visible: false
+                }
+            },
+            bars: {
+                actionBar: {
+                    visible: false
+                }
+            },
+            background: models.BackgroundType.Transparent,
+            layoutType: models.LayoutType.Custom,
+            customLayout: {
+                displayOption: models.DisplayOption.FitToPage
+            }
+        }
+    };
+
+    powerbi.reset(container);
+    const report = powerbi.embed(container, config);
+
+    report.on("loaded", function () {
+        console.log("Report loaded:", embedConfig.name);
+    });
+
+    report.on("rendered", function () {
+        console.log("Report rendered:", embedConfig.name);
+    });
+
+    report.on("error", function (event) {
+        console.error("Power BI embed error:", event.detail);
+    });
+
+    return report;
 }
 
 //////////////////////////////////////////////////////
@@ -186,23 +173,22 @@ async function getEmbedConfig(item) {
 
 (async function () {
     const site = getSiteFromUrl();
+    const configPath = `${configFolder}/${site}.json`;
 
     console.log("Loading site:", site);
-    setStatus(`Loading site: ${site}`);
 
     let config;
 
     try {
-        config = await loadSiteConfig(site);
-    }
-    catch (error) {
-        console.error(error);
+        const res = await fetch(configPath, { cache: "no-store" });
 
-        showError(`
-            <h2>Kunne ikke loade config</h2>
-            <p>${error.message}</p>
-        `);
+        if (!res.ok) {
+            throw new Error("Could not load config. HTTP " + res.status);
+        }
 
+        config = await res.json();
+    } catch (error) {
+        showError("Kunne ikke loade config:\n" + configPath + "\n\n" + error.message);
         return;
     }
 
@@ -211,51 +197,67 @@ async function getEmbedConfig(item) {
     const items = Array.isArray(config.items) ? config.items : [];
 
     if (items.length === 0) {
-        showError(`
-            <h2>Ingen rapporter i config</h2>
-            <p>Site: ${site}</p>
-        `);
-
+        showError("Ingen rapporter i config:\n" + configPath);
         return;
     }
 
     console.log("Reports loaded:", items.length);
 
     const framesDiv = document.getElementById("frames");
-    const frames = [];
 
-    for (const item of items) {
-        const embedConfig = await getEmbedConfig(item);
-
-        if (!embedConfig.embedUrl) {
-            showError(`
-                <h2>Embed URL mangler</h2>
-                <p>Report: ${item.name || "Unknown"}</p>
-            `);
-
-            return;
-        }
-
-        const iframe = document.createElement("iframe");
-        iframe.src = embedConfig.embedUrl;
-        iframe.dataset.name = embedConfig.name;
-        iframe.dataset.mode = embedConfig.mode || "unknown";
-
-        framesDiv.appendChild(iframe);
-        frames.push(iframe);
-    }
-
-    console.log("Preloading reports...");
-    setStatus(`Preloading ${items.length} reports for ${site}`);
-
-    await sleep(20000);
-
-    document.getElementById("loading").style.display = "none";
-    frames[0].style.display = "block";
-
+    let frames = [];
+    let reports = [];
     let currentIndex = 0;
 
+    //////////////////////////////////////////////////////
+    // CREATE CONTAINERS + EMBED REPORTS
+    //////////////////////////////////////////////////////
+
+    for (const item of items) {
+        try {
+            console.log("Getting embed config for:", item.name);
+
+            const embedConfig = await getEmbedConfig(item);
+
+            const div = document.createElement("div");
+            div.className = "report-frame";
+            framesDiv.appendChild(div);
+
+            const report = embedReport(div, embedConfig);
+
+            frames.push(div);
+            reports.push({
+                item,
+                div,
+                report,
+                embedConfig
+            });
+        } catch (error) {
+            console.error("Failed to embed report:", item.name, error);
+            showError("Kunne ikke embedde rapport:\n" + item.name + "\n\n" + error.message);
+            return;
+        }
+    }
+
+    //////////////////////////////////////////////////////
+    // START DISPLAY
+    //////////////////////////////////////////////////////
+
+    await sleep(5000);
+
+    document.getElementById("loading").style.display = "none";
+
+    if (frames.length > 0) {
+        frames[0].style.display = "block";
+    }
+
+    //////////////////////////////////////////////////////
+    // ROTATION
+    //////////////////////////////////////////////////////
+
     function rotate() {
+        if (frames.length <= 1) return;
+
         frames[currentIndex].style.display = "none";
 
         currentIndex++;
@@ -265,42 +267,45 @@ async function getEmbedConfig(item) {
         }
 
         frames[currentIndex].style.display = "block";
-
-        setStatus(
-            `${site} | ${frames[currentIndex].dataset.name || "Report"} | ${currentIndex + 1}/${frames.length} | ${frames[currentIndex].dataset.mode || "unknown"}`
-        );
-    }
-
-    async function refreshReports() {
-        console.log("Background refresh starting");
-
-        for (let i = 0; i < frames.length; i++) {
-            if (i === currentIndex) continue;
-
-            const frame = frames[i];
-            const url = frame.src;
-
-            frame.src = "about:blank";
-
-            await sleep(1000);
-
-            frame.src = url;
-
-            await sleep(4000);
-        }
-
-        console.log("Background refresh done");
     }
 
     setInterval(rotate, rotateSeconds * 1000);
+
+    //////////////////////////////////////////////////////
+    // TOKEN / REPORT REFRESH
+    //////////////////////////////////////////////////////
+
+    async function refreshReports() {
+        console.log("Refreshing embed configs");
+
+        for (let i = 0; i < reports.length; i++) {
+            try {
+                const reportInfo = reports[i];
+                const newEmbedConfig = await getEmbedConfig(reportInfo.item);
+
+                powerbi.reset(reportInfo.div);
+
+                const newReport = embedReport(reportInfo.div, newEmbedConfig);
+
+                reports[i] = {
+                    ...reportInfo,
+                    report: newReport,
+                    embedConfig: newEmbedConfig
+                };
+
+                await sleep(1000);
+            } catch (error) {
+                console.error("Refresh failed for report:", reports[i].item.name, error);
+            }
+        }
+
+        console.log("Refresh completed");
+    }
+
     setInterval(refreshReports, refreshMinutes * 60 * 1000);
 
-    setStatus(
-        `${site} | ${frames[0].dataset.name || "Report"} | 1/${frames.length} | ${frames[0].dataset.mode || "unknown"}`
-    );
-
     console.log(`
-Infoscreen enterprise POC started
+Infoscreen enterprise started
 site: ${site}
 reports: ${items.length}
 rotate: ${rotateSeconds}s
