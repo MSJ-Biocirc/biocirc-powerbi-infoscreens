@@ -10,53 +10,136 @@
 html, body {
     margin: 0;
     padding: 0;
+    width: 100%;
+    height: 100%;
     background: black;
     overflow: hidden;
-    font-family: Segoe UI, Arial, sans-serif;
+    font-family: "Segoe UI", Arial, sans-serif;
+}
+
+body {
+    position: relative;
+}
+
+#app {
+    position: fixed;
+    inset: 0;
+    background: black;
+    overflow: hidden;
 }
 
 .report-frame {
     position: absolute;
-    top: 0;
-    left: 0;
+    inset: 0;
     width: 100vw;
     height: 100vh;
-    display: none;
     background: black;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 450ms ease-in-out, visibility 450ms ease-in-out;
+}
+
+.report-frame.active {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+.report-frame > iframe {
+    border: none !important;
 }
 
 #loading {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    color: white;
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: black;
+    color: rgba(255, 255, 255, 0.78);
     font-size: 26px;
-    opacity: 0.7;
+    letter-spacing: 0.2px;
     z-index: 50;
 }
 
+#loading.hidden {
+    display: none;
+}
+
+#loadingBox {
+    text-align: center;
+}
+
+#loadingTitle {
+    font-size: 28px;
+    margin-bottom: 14px;
+}
+
+#loadingSubtitle {
+    font-size: 15px;
+    opacity: 0.55;
+}
+
+#progress {
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    height: 3px;
+    width: 0%;
+    background: rgba(255, 255, 255, 0.55);
+    z-index: 60;
+    transition: width 250ms linear;
+}
+
 #error {
-    position: absolute;
-    top: 20px;
-    left: 20px;
-    right: 20px;
+    position: fixed;
+    top: 24px;
+    left: 24px;
+    right: 24px;
     color: white;
-    background: #900;
-    padding: 15px;
-    font-size: 18px;
+    background: #990000;
+    padding: 18px 22px;
+    font-size: 17px;
+    line-height: 1.45;
     display: none;
     z-index: 100;
     white-space: pre-wrap;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+#status {
+    position: fixed;
+    right: 16px;
+    bottom: 12px;
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 12px;
+    z-index: 70;
+    display: none;
+}
+
+#status.visible {
+    display: block;
 }
 </style>
 </head>
 
 <body>
 
-<div id="loading">Loading reports...</div>
+<div id="app">
+    <div id="frames"></div>
+</div>
+
+<div id="loading">
+    <div id="loadingBox">
+        <div id="loadingTitle">Loading reports...</div>
+        <div id="loadingSubtitle">BioCirc Power BI Infoscreen</div>
+    </div>
+</div>
+
+<div id="progress"></div>
 <div id="error"></div>
-<div id="frames"></div>
+<div id="status"></div>
 
 <script>
 //////////////////////////////////////////////////////
@@ -82,12 +165,54 @@ function showError(message) {
     console.error(message);
 }
 
+function clearError() {
+    const el = document.getElementById("error");
+    el.textContent = "";
+    el.style.display = "none";
+}
+
+function setStatus(message) {
+    const el = document.getElementById("status");
+    el.textContent = message || "";
+    el.classList.toggle("visible", Boolean(message));
+}
+
+function setProgress(current, total) {
+    const el = document.getElementById("progress");
+
+    if (!total || total <= 0) {
+        el.style.width = "0%";
+        return;
+    }
+
+    const pct = Math.round((current / total) * 100);
+    el.style.width = `${pct}%`;
+}
+
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+async function fetchJson(url, options = {}) {
+    const response = await fetch(url, options);
+    const text = await response.text();
+
+    let body;
+    try {
+        body = text ? JSON.parse(text) : null;
+    } catch {
+        body = text;
+    }
+
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${JSON.stringify(body)}`);
+    }
+
+    return body;
+}
+
 async function getEmbedConfig(item) {
-    const response = await fetch("/api/getEmbedConfig", {
+    return fetchJson("/api/getEmbedConfig", {
         method: "POST",
         headers: {
             "Content-Type": "application/json"
@@ -99,25 +224,18 @@ async function getEmbedConfig(item) {
             pageName: item.pageName
         })
     });
+}
 
-    const text = await response.text();
-
-    let body;
-    try {
-        body = text ? JSON.parse(text) : null;
-    } catch {
-        body = text;
+function getPowerBiModels() {
+    if (!window["powerbi-client"] || !window["powerbi-client"].models) {
+        throw new Error("Power BI JavaScript client is not loaded.");
     }
 
-    if (!response.ok) {
-        throw new Error("Backend returned HTTP " + response.status + ": " + JSON.stringify(body));
-    }
-
-    return body;
+    return window["powerbi-client"].models;
 }
 
 function embedReport(container, embedConfig) {
-    const models = window["powerbi-client"].models;
+    const models = getPowerBiModels();
 
     const config = {
         type: "report",
@@ -130,6 +248,7 @@ function embedReport(container, embedConfig) {
         settings: {
             panes: {
                 filters: {
+                    expanded: false,
                     visible: false
                 },
                 pageNavigation: {
@@ -141,15 +260,14 @@ function embedReport(container, embedConfig) {
                     visible: false
                 }
             },
-            background: models.BackgroundType.Transparent,
-            layoutType: models.LayoutType.Custom,
-            customLayout: {
-                displayOption: models.DisplayOption.FitToPage
-            }
+            navContentPaneEnabled: false,
+            filterPaneEnabled: false,
+            background: models.BackgroundType.Default
         }
     };
 
     powerbi.reset(container);
+
     const report = powerbi.embed(container, config);
 
     report.on("loaded", function () {
@@ -161,10 +279,20 @@ function embedReport(container, embedConfig) {
     });
 
     report.on("error", function (event) {
-        console.error("Power BI embed error:", event.detail);
+        console.error("Power BI embed error:", embedConfig.name, event.detail);
     });
 
     return report;
+}
+
+function createReportContainer(item) {
+    const div = document.createElement("div");
+    div.className = "report-frame";
+    div.setAttribute("data-report-name", item.name || "Unnamed report");
+
+    document.getElementById("frames").appendChild(div);
+
+    return div;
 }
 
 //////////////////////////////////////////////////////
@@ -176,19 +304,19 @@ function embedReport(container, embedConfig) {
     const configPath = `${configFolder}/${site}.json`;
 
     console.log("Loading site:", site);
+    console.log("Config path:", configPath);
 
     let config;
 
     try {
-        const res = await fetch(configPath, { cache: "no-store" });
-
-        if (!res.ok) {
-            throw new Error("Could not load config. HTTP " + res.status);
-        }
-
-        config = await res.json();
+        config = await fetchJson(configPath, { cache: "no-store" });
     } catch (error) {
-        showError("Kunne ikke loade config:\n" + configPath + "\n\n" + error.message);
+        showError(
+            "Kunne ikke loade config:\n" +
+            configPath +
+            "\n\n" +
+            error.message
+        );
         return;
     }
 
@@ -203,89 +331,101 @@ function embedReport(container, embedConfig) {
 
     console.log("Reports loaded:", items.length);
 
-    const framesDiv = document.getElementById("frames");
-
-    let frames = [];
     let reports = [];
     let currentIndex = 0;
 
     //////////////////////////////////////////////////////
-    // CREATE CONTAINERS + EMBED REPORTS
+    // LOAD AND EMBED REPORTS
     //////////////////////////////////////////////////////
 
-    for (const item of items) {
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+
         try {
+            setStatus(`Loading ${i + 1}/${items.length}: ${item.name}`);
+            setProgress(i, items.length);
+
             console.log("Getting embed config for:", item.name);
 
             const embedConfig = await getEmbedConfig(item);
+            const container = createReportContainer(item);
+            const report = embedReport(container, embedConfig);
 
-            const div = document.createElement("div");
-            div.className = "report-frame";
-            framesDiv.appendChild(div);
-
-            const report = embedReport(div, embedConfig);
-
-            frames.push(div);
             reports.push({
                 item,
-                div,
+                container,
                 report,
                 embedConfig
             });
+
+            setProgress(i + 1, items.length);
         } catch (error) {
-            console.error("Failed to embed report:", item.name, error);
-            showError("Kunne ikke embedde rapport:\n" + item.name + "\n\n" + error.message);
+            showError(
+                "Kunne ikke embedde rapport:\n" +
+                (item.name || "Ukendt rapport") +
+                "\n\n" +
+                error.message
+            );
             return;
         }
     }
 
-    //////////////////////////////////////////////////////
-    // START DISPLAY
-    //////////////////////////////////////////////////////
-
-    await sleep(5000);
-
-    document.getElementById("loading").style.display = "none";
-
-    if (frames.length > 0) {
-        frames[0].style.display = "block";
+    if (reports.length === 0) {
+        showError("Ingen rapporter kunne indlæses.");
+        return;
     }
+
+    await sleep(2500);
+
+    document.getElementById("loading").classList.add("hidden");
+    document.getElementById("progress").style.width = "0%";
+    setStatus("");
+
+    reports[0].container.classList.add("active");
 
     //////////////////////////////////////////////////////
     // ROTATION
     //////////////////////////////////////////////////////
 
-    function rotate() {
-        if (frames.length <= 1) return;
+    function showReport(index) {
+        if (!reports[index]) return;
 
-        frames[currentIndex].style.display = "none";
+        reports.forEach((reportInfo, i) => {
+            reportInfo.container.classList.toggle("active", i === index);
+        });
 
-        currentIndex++;
+        currentIndex = index;
 
-        if (currentIndex >= frames.length) {
-            currentIndex = 0;
-        }
-
-        frames[currentIndex].style.display = "block";
+        const current = reports[currentIndex];
+        console.log("Showing report:", current.item.name);
     }
 
-    setInterval(rotate, rotateSeconds * 1000);
+    function rotate() {
+        if (reports.length <= 1) return;
+
+        const nextIndex = currentIndex + 1 >= reports.length ? 0 : currentIndex + 1;
+        showReport(nextIndex);
+    }
+
+    const rotateMs = Math.max(5, rotateSeconds) * 1000;
+    setInterval(rotate, rotateMs);
 
     //////////////////////////////////////////////////////
-    // TOKEN / REPORT REFRESH
+    // BACKGROUND TOKEN REFRESH
     //////////////////////////////////////////////////////
 
     async function refreshReports() {
-        console.log("Refreshing embed configs");
+        console.log("Refreshing embed tokens");
 
         for (let i = 0; i < reports.length; i++) {
+            const reportInfo = reports[i];
+
             try {
-                const reportInfo = reports[i];
                 const newEmbedConfig = await getEmbedConfig(reportInfo.item);
 
-                powerbi.reset(reportInfo.div);
+                powerbi.reset(reportInfo.container);
 
-                const newReport = embedReport(reportInfo.div, newEmbedConfig);
+                const newReport = embedReport(reportInfo.container, newEmbedConfig);
 
                 reports[i] = {
                     ...reportInfo,
@@ -293,16 +433,45 @@ function embedReport(container, embedConfig) {
                     embedConfig: newEmbedConfig
                 };
 
-                await sleep(1000);
+                if (i === currentIndex) {
+                    reports[i].container.classList.add("active");
+                }
+
+                await sleep(750);
             } catch (error) {
-                console.error("Refresh failed for report:", reports[i].item.name, error);
+                console.error("Refresh failed for report:", reportInfo.item.name, error);
             }
         }
 
         console.log("Refresh completed");
     }
 
-    setInterval(refreshReports, refreshMinutes * 60 * 1000);
+    const refreshMs = Math.max(5, refreshMinutes) * 60 * 1000;
+    setInterval(refreshReports, refreshMs);
+
+    //////////////////////////////////////////////////////
+    // SAFETY: RECOVER AFTER WINDOW RESIZE
+    //////////////////////////////////////////////////////
+
+    let resizeTimer = null;
+
+    window.addEventListener("resize", function () {
+        clearTimeout(resizeTimer);
+
+        resizeTimer = setTimeout(function () {
+            const current = reports[currentIndex];
+
+            if (current && current.report) {
+                try {
+                    current.report.resize();
+                } catch (error) {
+                    console.warn("Resize failed:", error);
+                }
+            }
+        }, 500);
+    });
+
+    clearError();
 
     console.log(`
 Infoscreen enterprise started
