@@ -1,0 +1,9 @@
+{
+  "name": "biocirc-powerbi-infoscreens-api",
+  "version": "1.0.0",
+  "description": "Azure Functions API for BioCirc Power BI infoscreens",
+  "main": "getEmbedConfig.js",
+  "dependencies": {
+    "@azure/msal-node": "^2.16.2"
+  }
+}
