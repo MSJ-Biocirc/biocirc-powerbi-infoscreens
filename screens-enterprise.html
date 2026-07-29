@@ -38,8 +38,8 @@
         /*
          * Der findes kun to Power BI-containere:
          *
-         * 1. Den aktive rapport
-         * 2. Den næste rapport, som indlæses skjult
+         * 1. Den aktive rapport.
+         * 2. Den næste rapport, som indlæses skjult.
          */
         .report-slot {
             position: absolute;
@@ -161,7 +161,6 @@
             display: none;
 
             color: rgba(255, 255, 255, 0.38);
-
             font-size: 12px;
 
             z-index: 70;
@@ -171,13 +170,11 @@
             display: block;
         }
 
-        /*
-         * Fullscreen-knap
-         */
         #fullscreenButton {
             position: fixed;
             right: 18px;
             bottom: 18px;
+
             z-index: 200;
 
             display: flex;
@@ -196,7 +193,6 @@
             font-size: 14px;
 
             cursor: pointer;
-
             opacity: 0.55;
 
             transition:
@@ -224,7 +220,7 @@
         }
 
         /*
-         * Knappen skjules helt, når fullscreen er aktiv.
+         * Knappen forsvinder helt i fullscreen.
          */
         html.is-fullscreen #fullscreenButton {
             display: none;
@@ -293,11 +289,12 @@
         /*
          * Fallback-værdier.
          *
-         * De bruges kun, hvis indstillingerne ikke findes
+         * De bruges, hvis en indstilling ikke findes
          * i site-configen.
          */
         const fallbackRotateSeconds = 35;
         const fallbackRefreshMinutes = 15;
+        const fallbackConfigCheckMinutes = 60;
         const fallbackPreloadTimeoutSeconds = 60;
         const fallbackRetryCount = 1;
         const fallbackWatchdogMinutes = 3;
@@ -347,8 +344,13 @@
         let siteConfig = null;
         let items = [];
 
+        let configPath = "";
+        let initialConfigFingerprint = "";
+        let configCheckRunning = false;
+
         let rotateMilliseconds = 0;
         let refreshMilliseconds = 0;
+        let configCheckMilliseconds = 0;
         let preloadTimeoutMilliseconds = 0;
         let watchdogMilliseconds = 0;
         let retryCount = 0;
@@ -618,8 +620,7 @@
             /*
              * pageName er valgfri.
              *
-             * Hvis den ikke findes, åbner Power BI den
-             * gemte standardside i rapporten.
+             * Uden pageName åbnes rapportens gemte standardside.
              */
             if (embedConfig.pageName) {
                 config.pageName = embedConfig.pageName;
@@ -709,11 +710,6 @@
                     completed = true;
 
                     window.clearTimeout(timeoutId);
-
-                    /*
-                     * De midlertidige load-events fjernes efter
-                     * første succesfulde rendering.
-                     */
                     detachSlotHandlers(slot);
 
                     slot.renderedAt = Date.now();
@@ -894,7 +890,7 @@
             deactivateSlot(previousActive);
 
             /*
-             * Slottene byttes med det samme.
+             * Slottene byttes straks.
              *
              * Den gamle rapport fjernes efter fade-effekten,
              * så der ikke kommer sort blink.
@@ -938,8 +934,8 @@
             try {
                 while (!systemStopped) {
                     /*
-                     * Ved kun én rapport skal rapporten ikke
-                     * embeddes igen ved hvert interval.
+                     * Ved én rapport skal den ikke embeddes igen
+                     * ved hvert rotationsinterval.
                      */
                     if (items.length <= 1) {
                         await sleep(rotateMilliseconds);
@@ -956,10 +952,7 @@
                     let checkedCandidates = 0;
 
                     /*
-                     * Hvis én rapport fejler, prøves den næste.
-                     *
-                     * Vi gennemgår højst alle øvrige rapporter
-                     * én gang pr. rotationsforsøg.
+                     * Hvis én rapport fejler, prøves næste rapport.
                      */
                     while (
                         checkedCandidates <
@@ -1006,11 +999,8 @@
                     }
 
                     /*
-                     * Den aktuelle rapport vises i mindst
+                     * Den aktive rapport vises i mindst
                      * rotateSeconds.
-                     *
-                     * Hvis preload tager længere tid end intervallet,
-                     * skiftes der straks, når næste rapport er klar.
                      */
                     const elapsed =
                         Date.now() - currentShownAt;
@@ -1069,7 +1059,7 @@
             } catch (error) {
                 /*
                  * En mislykket data-refresh må ikke stoppe
-                 * rapportrotationen.
+                 * rotationen.
                  */
                 console.error(
                     "Data refresh failed for " +
@@ -1162,6 +1152,140 @@
         }
 
         //////////////////////////////////////////////////////
+        // CONFIG CHANGE DETECTION
+        //////////////////////////////////////////////////////
+
+        function createConfigFingerprint(config) {
+            const relevantConfig = {
+                site:
+                    config.site || "",
+
+                rotateSeconds:
+                    config.rotateSeconds,
+
+                refreshMinutes:
+                    config.refreshMinutes,
+
+                configCheckMinutes:
+                    config.configCheckMinutes,
+
+                preloadTimeoutSeconds:
+                    config.preloadTimeoutSeconds,
+
+                retryCount:
+                    config.retryCount,
+
+                watchdogMinutes:
+                    config.watchdogMinutes,
+
+                items:
+                    Array.isArray(config.items)
+                        ? config.items.map(item => ({
+                            name:
+                                item.name || "",
+
+                            reportId:
+                                item.reportId || "",
+
+                            groupId:
+                                item.groupId || "",
+
+                            pageName:
+                                item.pageName || ""
+                        }))
+                        : []
+            };
+
+            return JSON.stringify(relevantConfig);
+        }
+
+        async function checkForConfigChanges() {
+            if (
+                systemStopped ||
+                configCheckRunning
+            ) {
+                return;
+            }
+
+            configCheckRunning = true;
+
+            try {
+                console.log(
+                    "Checking for config changes:",
+                    configPath
+                );
+
+                /*
+                 * Timestamp og no-store forhindrer browser- og
+                 * CDN-cache i at levere den gamle config.
+                 */
+                const latestConfig =
+                    await fetchJson(
+                        `${configPath}?t=${Date.now()}`,
+                        {
+                            cache: "no-store"
+                        }
+                    );
+
+                const latestFingerprint =
+                    createConfigFingerprint(
+                        latestConfig
+                    );
+
+                if (
+                    latestFingerprint !==
+                    initialConfigFingerprint
+                ) {
+                    console.log(
+                        "Config change detected. " +
+                        "Reloading infoscreen."
+                    );
+
+                    systemStopped = true;
+
+                    setStatus(
+                        "Ny konfiguration fundet. Genindlæser..."
+                    );
+
+                    window.setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+
+                    return;
+                }
+
+                console.log(
+                    "No config changes detected."
+                );
+            } catch (error) {
+                /*
+                 * En mislykket kontrol må ikke stoppe skærmen.
+                 * Der prøves igen ved næste interval.
+                 */
+                console.error(
+                    "Config check failed:",
+                    error
+                );
+            } finally {
+                configCheckRunning = false;
+            }
+        }
+
+        function startConfigChangeDetection() {
+            window.setInterval(
+                checkForConfigChanges,
+                configCheckMilliseconds
+            );
+
+            console.log(
+                "Config change detection started. " +
+                `Interval: ${
+                    configCheckMilliseconds / 60000
+                } minute(s).`
+            );
+        }
+
+        //////////////////////////////////////////////////////
         // WATCHDOG
         //////////////////////////////////////////////////////
 
@@ -1172,8 +1296,7 @@
                 }
 
                 /*
-                 * Ved kun én rapport er der ingen rotation.
-                 * Watchdog må derfor ikke genindlæse siden.
+                 * Ved én rapport sker der ikke rotation.
                  */
                 if (items.length <= 1) {
                     return;
@@ -1288,10 +1411,6 @@
                 fullscreen
             );
 
-            /*
-             * Vent på browserens fullscreen-animation,
-             * før Power BI tilpasses den nye størrelse.
-             */
             window.setTimeout(
                 resizePowerBiReports,
                 350
@@ -1362,7 +1481,7 @@
                 return;
             }
 
-            const configPath =
+            configPath =
                 `${configFolder}/${accessContext.site}.json`;
 
             console.log(
@@ -1387,11 +1506,20 @@
 
             try {
                 siteConfig = await fetchJson(
-                    configPath,
+                    `${configPath}?t=${Date.now()}`,
                     {
                         cache: "no-store"
                     }
                 );
+
+                /*
+                 * Gem den oprindelige config som fingerprint.
+                 * Senere kontroller sammenlignes med denne.
+                 */
+                initialConfigFingerprint =
+                    createConfigFingerprint(
+                        siteConfig
+                    );
             } catch (error) {
                 showError(
                     "Kunne ikke loade config:\n" +
@@ -1431,6 +1559,13 @@
                     1
                 ) * 60 * 1000;
 
+            configCheckMilliseconds =
+                normalizeNumber(
+                    siteConfig.configCheckMinutes,
+                    fallbackConfigCheckMinutes,
+                    1
+                ) * 60 * 1000;
+
             preloadTimeoutMilliseconds =
                 normalizeNumber(
                     siteConfig.preloadTimeoutSeconds,
@@ -1455,13 +1590,17 @@
                 ) * 60 * 1000;
 
             console.log({
-                reports: items.length,
+                reports:
+                    items.length,
 
                 rotateSeconds:
                     rotateMilliseconds / 1000,
 
                 refreshMinutes:
                     refreshMilliseconds / 60000,
+
+                configCheckMinutes:
+                    configCheckMilliseconds / 60000,
 
                 preloadTimeoutSeconds:
                     preloadTimeoutMilliseconds / 1000,
@@ -1516,8 +1655,7 @@
             }
 
             /*
-             * Data-refresh er uafhængig af rotation og
-             * tokenfornyelse.
+             * Data-refresh er uafhængig af rotation.
              */
             window.setInterval(
                 refreshActiveReport,
@@ -1535,6 +1673,7 @@
             startWatchdog();
             startResizeHandler();
             startFullscreenControls();
+            startConfigChangeDetection();
 
             rotationLoop();
 
@@ -1545,6 +1684,7 @@ device: ${accessContext.device}
 reports: ${items.length}
 rotate: ${rotateMilliseconds / 1000}s
 refresh: ${refreshMilliseconds / 60000}m
+config check: ${configCheckMilliseconds / 60000}m
 preload timeout: ${preloadTimeoutMilliseconds / 1000}s
 retry count: ${retryCount}
 watchdog: ${watchdogMilliseconds / 60000}m
