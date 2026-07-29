@@ -1,515 +1,1325 @@
 <!DOCTYPE html>
-<html>
+<html lang="da">
 <head>
-<meta charset="UTF-8" />
-<title>BioCirc Power BI Infoscreen - Enterprise</title>
+    <meta charset="UTF-8" />
 
-<script src="https://cdn.jsdelivr.net/npm/powerbi-client@2.23.1/dist/powerbi.min.js"></script>
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1, maximum-scale=1"
+    />
 
-<style>
-html, body {
-    margin: 0;
-    padding: 0;
-    width: 100%;
-    height: 100%;
-    background: black;
-    overflow: hidden;
-    font-family: "Segoe UI", Arial, sans-serif;
-}
+    <title>BioCirc Power BI Infoscreen</title>
 
-body {
-    position: relative;
-}
+    <script src="https://cdn.jsdelivr.net/npm/powerbi-client@2.23.1/dist/powerbi.min.js"></script>
 
-#app {
-    position: fixed;
-    inset: 0;
-    background: black;
-    overflow: hidden;
-}
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #000;
+            font-family: "Segoe UI", Arial, sans-serif;
+        }
 
-.report-frame {
-    position: absolute;
-    inset: 0;
-    width: 100vw;
-    height: 100vh;
-    background: black;
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-    transition: opacity 450ms ease-in-out, visibility 450ms ease-in-out;
-}
+        body {
+            position: relative;
+        }
 
-.report-frame.active {
-    opacity: 1;
-    visibility: visible;
-    pointer-events: auto;
-}
+        #app {
+            position: fixed;
+            inset: 0;
+            overflow: hidden;
+            background: #000;
+        }
 
-.report-frame > iframe {
-    border: none !important;
-}
+        /*
+         * Der findes altid kun to rapport-containere:
+         *
+         * 1. Den aktive rapport
+         * 2. Den næste rapport, der preloades skjult
+         */
+        .report-slot {
+            position: absolute;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
 
-#loading {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: black;
-    color: rgba(255, 255, 255, 0.78);
-    font-size: 26px;
-    letter-spacing: 0.2px;
-    z-index: 50;
-}
+            background: #000;
 
-#loading.hidden {
-    display: none;
-}
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
 
-#loadingBox {
-    text-align: center;
-}
+            transition:
+                opacity 450ms ease-in-out,
+                visibility 450ms ease-in-out;
 
-#loadingTitle {
-    font-size: 28px;
-    margin-bottom: 14px;
-}
+            will-change: opacity;
+        }
 
-#loadingSubtitle {
-    font-size: 15px;
-    opacity: 0.55;
-}
+        .report-slot.active {
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+            z-index: 2;
+        }
 
-#progress {
-    position: fixed;
-    left: 0;
-    bottom: 0;
-    height: 3px;
-    width: 0%;
-    background: rgba(255, 255, 255, 0.55);
-    z-index: 60;
-    transition: width 250ms linear;
-}
+        .report-slot.standby {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            z-index: 1;
+        }
 
-#error {
-    position: fixed;
-    top: 24px;
-    left: 24px;
-    right: 24px;
-    color: white;
-    background: #990000;
-    padding: 18px 22px;
-    font-size: 17px;
-    line-height: 1.45;
-    display: none;
-    z-index: 100;
-    white-space: pre-wrap;
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
-}
+        .report-slot > iframe {
+            width: 100% !important;
+            height: 100% !important;
+            border: 0 !important;
+        }
 
-#status {
-    position: fixed;
-    right: 16px;
-    bottom: 12px;
-    color: rgba(255, 255, 255, 0.35);
-    font-size: 12px;
-    z-index: 70;
-    display: none;
-}
+        #loading {
+            position: fixed;
+            inset: 0;
 
-#status.visible {
-    display: block;
-}
-</style>
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            background: #000;
+            color: rgba(255, 255, 255, 0.82);
+
+            z-index: 50;
+        }
+
+        #loading.hidden {
+            display: none;
+        }
+
+        #loadingBox {
+            max-width: 700px;
+            padding: 30px;
+            text-align: center;
+        }
+
+        #loadingTitle {
+            margin-bottom: 12px;
+            font-size: 28px;
+            font-weight: 400;
+        }
+
+        #loadingSubtitle {
+            font-size: 15px;
+            opacity: 0.55;
+        }
+
+        #progress {
+            position: fixed;
+            left: 0;
+            bottom: 0;
+
+            width: 0%;
+            height: 3px;
+
+            background: rgba(255, 255, 255, 0.55);
+
+            z-index: 60;
+
+            transition: width 250ms linear;
+        }
+
+        #error {
+            position: fixed;
+            top: 24px;
+            left: 24px;
+            right: 24px;
+
+            display: none;
+
+            padding: 18px 22px;
+
+            color: #fff;
+            background: #990000;
+
+            font-size: 17px;
+            line-height: 1.45;
+            white-space: pre-wrap;
+
+            box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+
+            z-index: 100;
+        }
+
+        #status {
+            position: fixed;
+            right: 16px;
+            bottom: 12px;
+
+            display: none;
+
+            color: rgba(255, 255, 255, 0.35);
+
+            font-size: 12px;
+
+            z-index: 70;
+        }
+
+        #status.visible {
+            display: block;
+        }
+    </style>
 </head>
 
 <body>
-
-<div id="app">
-    <div id="frames"></div>
-</div>
-
-<div id="loading">
-    <div id="loadingBox">
-        <div id="loadingTitle">Loading reports...</div>
-        <div id="loadingSubtitle">BioCirc Power BI Infoscreen</div>
+    <div id="app">
+        <div id="slotA" class="report-slot standby"></div>
+        <div id="slotB" class="report-slot standby"></div>
     </div>
-</div>
 
-<div id="progress"></div>
-<div id="error"></div>
-<div id="status"></div>
+    <div id="loading">
+        <div id="loadingBox">
+            <div id="loadingTitle">Loading reports...</div>
+            <div id="loadingSubtitle">
+                BioCirc Power BI Infoscreen
+            </div>
+        </div>
+    </div>
 
-<script>
-//////////////////////////////////////////////////////
-// CONFIG
-//////////////////////////////////////////////////////
+    <div id="progress"></div>
+    <div id="error"></div>
+    <div id="status"></div>
 
-const defaultSite = "Vesthimmerland";
-const configFolder = "configs";
+    <script>
+        //////////////////////////////////////////////////////
+        // BASIC CONFIG
+        //////////////////////////////////////////////////////
 
-//////////////////////////////////////////////////////
-// HELPERS
-//////////////////////////////////////////////////////
+        const defaultSite = "Vesthimmerland";
+        const configFolder = "configs";
 
-function getUrlParams() {
-    const p = new URLSearchParams(window.location.search);
+        /*
+         * Fallback-værdier.
+         *
+         * De bruges kun, hvis værdierne ikke findes
+         * i site-configen.
+         */
+        const fallbackRotateSeconds = 35;
+        const fallbackRefreshMinutes = 15;
+        const fallbackPreloadTimeoutSeconds = 60;
+        const fallbackRetryCount = 1;
+        const fallbackWatchdogMinutes = 3;
 
-    return {
-        site: p.get("site") || defaultSite,
-        device: p.get("device") || "",
-        key: p.get("key") || ""
-    };
-}
+        /*
+         * Tokenet fornyes, hvis det udløber inden for
+         * dette antal minutter.
+         */
+        const tokenRenewalMarginMinutes = 5;
 
-function showError(message) {
-    const el = document.getElementById("error");
-    el.textContent = message;
-    el.style.display = "block";
-    console.error(message);
-}
+        /*
+         * Ventetid efter et visuelt skift, før den gamle
+         * Power BI-instans fjernes.
+         */
+        const transitionCleanupMilliseconds = 650;
 
-function clearError() {
-    const el = document.getElementById("error");
-    el.textContent = "";
-    el.style.display = "none";
-}
+        //////////////////////////////////////////////////////
+        // DOM
+        //////////////////////////////////////////////////////
 
-function setStatus(message) {
-    const el = document.getElementById("status");
-    el.textContent = message || "";
-    el.classList.toggle("visible", Boolean(message));
-}
+        const loadingElement = document.getElementById("loading");
+        const loadingTitleElement =
+            document.getElementById("loadingTitle");
 
-function setProgress(current, total) {
-    const el = document.getElementById("progress");
+        const loadingSubtitleElement =
+            document.getElementById("loadingSubtitle");
 
-    if (!total || total <= 0) {
-        el.style.width = "0%";
-        return;
-    }
+        const errorElement = document.getElementById("error");
+        const statusElement = document.getElementById("status");
+        const progressElement = document.getElementById("progress");
 
-    const pct = Math.round((current / total) * 100);
-    el.style.width = `${pct}%`;
-}
+        //////////////////////////////////////////////////////
+        // RUNTIME STATE
+        //////////////////////////////////////////////////////
 
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
+        let accessContext = null;
+        let siteConfig = null;
+        let items = [];
 
-async function fetchJson(url, options = {}) {
-    const response = await fetch(url, options);
-    const text = await response.text();
+        let rotateMilliseconds = 0;
+        let refreshMilliseconds = 0;
+        let preloadTimeoutMilliseconds = 0;
+        let watchdogMilliseconds = 0;
+        let retryCount = 0;
 
-    let body;
-    try {
-        body = text ? JSON.parse(text) : null;
-    } catch {
-        body = text;
-    }
+        let activeSlot = null;
+        let standbySlot = null;
 
-    if (!response.ok) {
-        let message = `HTTP ${response.status}`;
+        let currentItemIndex = -1;
+        let lastSuccessfulSwitchAt = Date.now();
 
-        if (body && body.error) {
-            message += `: ${body.error}`;
-        } else {
-            message += `: ${JSON.stringify(body)}`;
+        let systemStopped = false;
+        let rotationRunning = false;
+
+        //////////////////////////////////////////////////////
+        // SLOT OBJECTS
+        //////////////////////////////////////////////////////
+
+        const slotA = {
+            name: "A",
+            element: document.getElementById("slotA"),
+            report: null,
+            item: null,
+            itemIndex: -1,
+            embedConfig: null,
+            renderedAt: null
+        };
+
+        const slotB = {
+            name: "B",
+            element: document.getElementById("slotB"),
+            report: null,
+            item: null,
+            itemIndex: -1,
+            embedConfig: null,
+            renderedAt: null
+        };
+
+        //////////////////////////////////////////////////////
+        // HELPERS
+        //////////////////////////////////////////////////////
+
+        function getUrlParams() {
+            const parameters =
+                new URLSearchParams(window.location.search);
+
+            return {
+                site:
+                    parameters.get("site") ||
+                    defaultSite,
+
+                device:
+                    parameters.get("device") ||
+                    "",
+
+                key:
+                    parameters.get("key") ||
+                    ""
+            };
         }
 
-        throw new Error(message);
-    }
-
-    return body;
-}
-
-async function getEmbedConfig(item, accessContext) {
-    return fetchJson("/api/getEmbedConfig", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-            site: accessContext.site,
-            device: accessContext.device,
-            key: accessContext.key,
-            name: item.name,
-            reportId: item.reportId,
-            groupId: item.groupId,
-            pageName: item.pageName
-        })
-    });
-}
-
-function getPowerBiModels() {
-    if (!window["powerbi-client"] || !window["powerbi-client"].models) {
-        throw new Error("Power BI JavaScript client is not loaded.");
-    }
-
-    return window["powerbi-client"].models;
-}
-
-function embedReport(container, embedConfig) {
-    const models = getPowerBiModels();
-
-    const config = {
-        type: "report",
-        id: embedConfig.reportId,
-        embedUrl: embedConfig.embedUrl,
-        accessToken: embedConfig.accessToken,
-        tokenType: models.TokenType.Embed,
-        pageName: embedConfig.pageName,
-        permissions: models.Permissions.Read,
-        settings: {
-            panes: {
-                filters: {
-                    expanded: false,
-                    visible: false
-                },
-                pageNavigation: {
-                    visible: false
-                }
-            },
-            bars: {
-                actionBar: {
-                    visible: false
-                }
-            },
-            navContentPaneEnabled: false,
-            filterPaneEnabled: false,
-            background: models.BackgroundType.Default
-        }
-    };
-
-    powerbi.reset(container);
-
-    const report = powerbi.embed(container, config);
-
-    report.on("loaded", function () {
-        console.log("Report loaded:", embedConfig.name);
-    });
-
-    report.on("rendered", function () {
-        console.log("Report rendered:", embedConfig.name);
-    });
-
-    report.on("error", function (event) {
-        console.error("Power BI embed error:", embedConfig.name, event.detail);
-    });
-
-    return report;
-}
-
-function createReportContainer(item) {
-    const div = document.createElement("div");
-    div.className = "report-frame";
-    div.setAttribute("data-report-name", item.name || "Unnamed report");
-
-    document.getElementById("frames").appendChild(div);
-
-    return div;
-}
-
-//////////////////////////////////////////////////////
-// MAIN
-//////////////////////////////////////////////////////
-
-(async function () {
-    const accessContext = getUrlParams();
-    const site = accessContext.site;
-    const configPath = `${configFolder}/${site}.json`;
-
-    console.log("Loading site:", site);
-    console.log("Device:", accessContext.device);
-    console.log("Config path:", configPath);
-
-    if (!accessContext.device || !accessContext.key) {
-        showError(
-            "Mangler device eller key i URL.\n\n" +
-            "Forventet format:\n" +
-            "?site=office&device=Office-Screen-01&key=..."
-        );
-        return;
-    }
-
-    let config;
-
-    try {
-        config = await fetchJson(configPath, { cache: "no-store" });
-    } catch (error) {
-        showError(
-            "Kunne ikke loade config:\n" +
-            configPath +
-            "\n\n" +
-            error.message
-        );
-        return;
-    }
-
-    const rotateSeconds = Number(config.rotateSeconds || 30);
-    const refreshMinutes = Number(config.refreshMinutes || 30);
-    const items = Array.isArray(config.items) ? config.items : [];
-
-    if (items.length === 0) {
-        showError("Ingen rapporter i config:\n" + configPath);
-        return;
-    }
-
-    console.log("Reports loaded:", items.length);
-
-    let reports = [];
-    let currentIndex = 0;
-
-    //////////////////////////////////////////////////////
-    // LOAD AND EMBED REPORTS
-    //////////////////////////////////////////////////////
-
-    for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-
-        try {
-            setStatus(`Loading ${i + 1}/${items.length}: ${item.name}`);
-            setProgress(i, items.length);
-
-            console.log("Getting embed config for:", item.name);
-
-            const embedConfig = await getEmbedConfig(item, accessContext);
-            const container = createReportContainer(item);
-            const report = embedReport(container, embedConfig);
-
-            reports.push({
-                item,
-                container,
-                report,
-                embedConfig
+        function sleep(milliseconds) {
+            return new Promise(resolve => {
+                window.setTimeout(resolve, milliseconds);
             });
-
-            setProgress(i + 1, items.length);
-        } catch (error) {
-            showError(
-                "Kunne ikke embedde rapport:\n" +
-                (item.name || "Ukendt rapport") +
-                "\n\n" +
-                error.message
-            );
-            return;
         }
-    }
 
-    if (reports.length === 0) {
-        showError("Ingen rapporter kunne indlæses.");
-        return;
-    }
+        function setLoading(title, subtitle) {
+            loadingTitleElement.textContent =
+                title || "Loading reports...";
 
-    await sleep(2500);
+            loadingSubtitleElement.textContent =
+                subtitle || "BioCirc Power BI Infoscreen";
 
-    document.getElementById("loading").classList.add("hidden");
-    document.getElementById("progress").style.width = "0%";
-    setStatus("");
+            loadingElement.classList.remove("hidden");
+        }
 
-    reports[0].container.classList.add("active");
+        function hideLoading() {
+            loadingElement.classList.add("hidden");
+        }
 
-    //////////////////////////////////////////////////////
-    // ROTATION
-    //////////////////////////////////////////////////////
+        function showError(message) {
+            errorElement.textContent = message;
+            errorElement.style.display = "block";
 
-    function showReport(index) {
-        if (!reports[index]) return;
+            console.error(message);
+        }
 
-        reports.forEach((reportInfo, i) => {
-            reportInfo.container.classList.toggle("active", i === index);
-        });
+        function clearError() {
+            errorElement.textContent = "";
+            errorElement.style.display = "none";
+        }
 
-        currentIndex = index;
+        function setStatus(message) {
+            statusElement.textContent = message || "";
 
-        const current = reports[currentIndex];
-        console.log("Showing report:", current.item.name);
-    }
+            statusElement.classList.toggle(
+                "visible",
+                Boolean(message)
+            );
+        }
 
-    function rotate() {
-        if (reports.length <= 1) return;
+        function setProgress(current, total) {
+            if (!total || total <= 0) {
+                progressElement.style.width = "0%";
+                return;
+            }
 
-        const nextIndex = currentIndex + 1 >= reports.length ? 0 : currentIndex + 1;
-        showReport(nextIndex);
-    }
+            const percentage =
+                Math.max(
+                    0,
+                    Math.min(
+                        100,
+                        Math.round((current / total) * 100)
+                    )
+                );
 
-    const rotateMs = Math.max(5, rotateSeconds) * 1000;
-    setInterval(rotate, rotateMs);
+            progressElement.style.width =
+                `${percentage}%`;
+        }
 
-    //////////////////////////////////////////////////////
-    // BACKGROUND TOKEN REFRESH
-    //////////////////////////////////////////////////////
+        function getPowerBiModels() {
+            if (
+                !window["powerbi-client"] ||
+                !window["powerbi-client"].models
+            ) {
+                throw new Error(
+                    "Power BI JavaScript client is not loaded."
+                );
+            }
 
-    async function refreshReports() {
-        console.log("Refreshing embed tokens");
+            return window["powerbi-client"].models;
+        }
 
-        for (let i = 0; i < reports.length; i++) {
-            const reportInfo = reports[i];
+        function normalizeNumber(
+            value,
+            fallback,
+            minimum
+        ) {
+            const parsed = Number(value);
+
+            if (!Number.isFinite(parsed)) {
+                return fallback;
+            }
+
+            return Math.max(minimum, parsed);
+        }
+
+        function getNextIndex(index) {
+            if (items.length <= 1) {
+                return 0;
+            }
+
+            return (index + 1) % items.length;
+        }
+
+        function describeItem(item) {
+            if (!item) {
+                return "Unknown report";
+            }
+
+            return item.name || item.reportId || "Unknown report";
+        }
+
+        //////////////////////////////////////////////////////
+        // HTTP
+        //////////////////////////////////////////////////////
+
+        async function fetchJson(url, options = {}) {
+            const response = await fetch(url, options);
+            const text = await response.text();
+
+            let body;
 
             try {
-                const newEmbedConfig = await getEmbedConfig(reportInfo.item, accessContext);
+                body = text ? JSON.parse(text) : null;
+            } catch {
+                body = text;
+            }
 
-                powerbi.reset(reportInfo.container);
+            if (!response.ok) {
+                let message = `HTTP ${response.status}`;
 
-                const newReport = embedReport(reportInfo.container, newEmbedConfig);
-
-                reports[i] = {
-                    ...reportInfo,
-                    report: newReport,
-                    embedConfig: newEmbedConfig
-                };
-
-                if (i === currentIndex) {
-                    reports[i].container.classList.add("active");
+                if (
+                    body &&
+                    typeof body === "object" &&
+                    body.error
+                ) {
+                    message += `: ${body.error}`;
+                } else if (body) {
+                    message += `: ${JSON.stringify(body)}`;
                 }
 
-                await sleep(750);
+                throw new Error(message);
+            }
+
+            return body;
+        }
+
+        async function getEmbedConfig(item) {
+            return fetchJson("/api/getEmbedConfig", {
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json"
+                },
+
+                body: JSON.stringify({
+                    site: accessContext.site,
+                    device: accessContext.device,
+                    key: accessContext.key,
+
+                    name: item.name,
+                    reportId: item.reportId,
+                    groupId: item.groupId,
+                    pageName: item.pageName
+                })
+            });
+        }
+
+        //////////////////////////////////////////////////////
+        // POWER BI CONFIG
+        //////////////////////////////////////////////////////
+
+        function createPowerBiConfig(embedConfig) {
+            const models = getPowerBiModels();
+
+            const config = {
+                type: "report",
+
+                id: embedConfig.reportId,
+                embedUrl: embedConfig.embedUrl,
+                accessToken: embedConfig.accessToken,
+
+                tokenType: models.TokenType.Embed,
+                permissions: models.Permissions.Read,
+
+                settings: {
+                    panes: {
+                        filters: {
+                            expanded: false,
+                            visible: false
+                        },
+
+                        pageNavigation: {
+                            visible: false
+                        }
+                    },
+
+                    bars: {
+                        actionBar: {
+                            visible: false
+                        }
+                    },
+
+                    navContentPaneEnabled: false,
+                    filterPaneEnabled: false,
+
+                    background:
+                        models.BackgroundType.Default
+                }
+            };
+
+            /*
+             * pageName er valgfri.
+             *
+             * Hvis den ikke findes, åbner Power BI den
+             * gemte standardside i rapporten.
+             */
+            if (embedConfig.pageName) {
+                config.pageName = embedConfig.pageName;
+            }
+
+            return config;
+        }
+
+        //////////////////////////////////////////////////////
+        // SLOT CLEANUP
+        //////////////////////////////////////////////////////
+
+        function detachSlotHandlers(slot) {
+            if (!slot.report) {
+                return;
+            }
+
+            try {
+                slot.report.off("loaded");
+                slot.report.off("rendered");
+                slot.report.off("error");
             } catch (error) {
-                console.error("Refresh failed for report:", reportInfo.item.name, error);
+                console.warn(
+                    `Could not remove handlers from slot ${slot.name}:`,
+                    error
+                );
             }
         }
 
-        console.log("Refresh completed");
-    }
+        function resetSlot(slot) {
+            detachSlotHandlers(slot);
 
-    const refreshMs = Math.max(5, refreshMinutes) * 60 * 1000;
-    setInterval(refreshReports, refreshMs);
+            try {
+                powerbi.reset(slot.element);
+            } catch (error) {
+                console.warn(
+                    `Could not reset slot ${slot.name}:`,
+                    error
+                );
+            }
 
-    //////////////////////////////////////////////////////
-    // SAFETY: RECOVER AFTER WINDOW RESIZE
-    //////////////////////////////////////////////////////
+            slot.report = null;
+            slot.item = null;
+            slot.itemIndex = -1;
+            slot.embedConfig = null;
+            slot.renderedAt = null;
 
-    let resizeTimer = null;
+            slot.element.classList.remove("active");
+            slot.element.classList.add("standby");
+        }
 
-    window.addEventListener("resize", function () {
-        clearTimeout(resizeTimer);
+        //////////////////////////////////////////////////////
+        // EMBED WITH TIMEOUT
+        //////////////////////////////////////////////////////
 
-        resizeTimer = setTimeout(function () {
-            const current = reports[currentIndex];
+        async function embedItemInSlot(
+            slot,
+            item,
+            itemIndex,
+            timeoutMilliseconds
+        ) {
+            resetSlot(slot);
 
-            if (current && current.report) {
+            slot.item = item;
+            slot.itemIndex = itemIndex;
+
+            console.log(
+                `Fetching embed config for ${describeItem(item)}`
+            );
+
+            const embedConfig = await getEmbedConfig(item);
+
+            slot.embedConfig = embedConfig;
+
+            const powerBiConfig =
+                createPowerBiConfig(embedConfig);
+
+            return new Promise((resolve, reject) => {
+                let completed = false;
+
+                const finishSuccessfully = () => {
+                    if (completed) {
+                        return;
+                    }
+
+                    completed = true;
+                    window.clearTimeout(timeoutId);
+
+                    /*
+                     * Event-handlerne fjernes efter det første
+                     * vellykkede render, så senere refresh-events
+                     * ikke starter den samme Promise igen.
+                     */
+                    detachSlotHandlers(slot);
+
+                    slot.renderedAt = Date.now();
+
+                    console.log(
+                        `Rendered ${describeItem(item)} ` +
+                        `in slot ${slot.name}`
+                    );
+
+                    resolve(slot);
+                };
+
+                const finishWithError = error => {
+                    if (completed) {
+                        return;
+                    }
+
+                    completed = true;
+                    window.clearTimeout(timeoutId);
+
+                    detachSlotHandlers(slot);
+
+                    const normalizedError =
+                        error instanceof Error
+                            ? error
+                            : new Error(String(error));
+
+                    console.error(
+                        `Embed failed for ${describeItem(item)}:`,
+                        normalizedError
+                    );
+
+                    reject(normalizedError);
+                };
+
+                const timeoutId = window.setTimeout(() => {
+                    finishWithError(
+                        new Error(
+                            `Rapporten blev ikke færdigrenderet ` +
+                            `inden for ` +
+                            `${Math.round(
+                                timeoutMilliseconds / 1000
+                            )} sekunder.`
+                        )
+                    );
+                }, timeoutMilliseconds);
+
                 try {
-                    current.report.resize();
+                    const report = powerbi.embed(
+                        slot.element,
+                        powerBiConfig
+                    );
+
+                    slot.report = report;
+
+                    report.on("loaded", () => {
+                        console.log(
+                            `Loaded ${describeItem(item)} ` +
+                            `in slot ${slot.name}`
+                        );
+                    });
+
+                    report.on("rendered", () => {
+                        finishSuccessfully();
+                    });
+
+                    report.on("error", event => {
+                        const detail =
+                            event && event.detail
+                                ? event.detail
+                                : event;
+
+                        let detailText;
+
+                        try {
+                            detailText =
+                                JSON.stringify(detail);
+                        } catch {
+                            detailText =
+                                String(detail || "Unknown error");
+                        }
+
+                        finishWithError(
+                            new Error(
+                                `Power BI embed error: ${detailText}`
+                            )
+                        );
+                    });
                 } catch (error) {
-                    console.warn("Resize failed:", error);
+                    finishWithError(error);
+                }
+            });
+        }
+
+        //////////////////////////////////////////////////////
+        // RETRY
+        //////////////////////////////////////////////////////
+
+        async function loadWithRetry(
+            slot,
+            item,
+            itemIndex
+        ) {
+            const totalAttempts = retryCount + 1;
+
+            let lastError = null;
+
+            for (
+                let attempt = 1;
+                attempt <= totalAttempts;
+                attempt++
+            ) {
+                if (systemStopped) {
+                    throw new Error("System stopped.");
+                }
+
+                try {
+                    setStatus(
+                        `Preloading: ${describeItem(item)} ` +
+                        `(${attempt}/${totalAttempts})`
+                    );
+
+                    return await embedItemInSlot(
+                        slot,
+                        item,
+                        itemIndex,
+                        preloadTimeoutMilliseconds
+                    );
+                } catch (error) {
+                    lastError = error;
+
+                    console.warn(
+                        `Attempt ${attempt}/${totalAttempts} failed ` +
+                        `for ${describeItem(item)}:`,
+                        error
+                    );
+
+                    resetSlot(slot);
+
+                    if (attempt < totalAttempts) {
+                        await sleep(2000);
+                    }
                 }
             }
-        }, 500);
-    });
 
-    clearError();
+            throw lastError || new Error(
+                `Could not load ${describeItem(item)}`
+            );
+        }
 
-    console.log(`
-Infoscreen enterprise started
-site: ${site}
+        //////////////////////////////////////////////////////
+        // DISPLAY SWITCHING
+        //////////////////////////////////////////////////////
+
+        function activateSlot(slot) {
+            slot.element.classList.remove("standby");
+            slot.element.classList.add("active");
+        }
+
+        function deactivateSlot(slot) {
+            slot.element.classList.remove("active");
+            slot.element.classList.add("standby");
+        }
+
+        async function switchToStandbySlot() {
+            const previousActive = activeSlot;
+            const nextActive = standbySlot;
+
+            activateSlot(nextActive);
+            deactivateSlot(previousActive);
+
+            /*
+             * Swappet udføres med det samme.
+             *
+             * Den gamle rapport resettes først efter fade-effekten,
+             * så skærmen ikke blinker sort under skiftet.
+             */
+            activeSlot = nextActive;
+            standbySlot = previousActive;
+
+            currentItemIndex = activeSlot.itemIndex;
+            lastSuccessfulSwitchAt = Date.now();
+
+            console.log(
+                `Now showing: ${describeItem(activeSlot.item)}`
+            );
+
+            setStatus("");
+
+            await sleep(transitionCleanupMilliseconds);
+
+            resetSlot(standbySlot);
+        }
+
+        //////////////////////////////////////////////////////
+        // ROTATION LOOP
+        //////////////////////////////////////////////////////
+
+        async function rotationLoop() {
+            if (rotationRunning || systemStopped) {
+                return;
+            }
+
+            rotationRunning = true;
+
+            try {
+                while (!systemStopped) {
+                    /*
+                     * Ved kun én rapport skal den ikke embeddes igen
+                     * ved hvert rotationsinterval.
+                     */
+                    if (items.length <= 1) {
+                        await sleep(rotateMilliseconds);
+                        continue;
+                    }
+
+                    const currentShownAt =
+                        lastSuccessfulSwitchAt;
+
+                    let candidateIndex =
+                        getNextIndex(currentItemIndex);
+
+                    let candidateLoaded = false;
+                    let checkedCandidates = 0;
+
+                    /*
+                     * Hvis én rapport fejler, prøver vi næste rapport.
+                     *
+                     * Vi gennemgår højst alle øvrige rapporter én gang,
+                     * før vi giver kontrollen til watchdog'en.
+                     */
+                    while (
+                        checkedCandidates < items.length - 1 &&
+                        !candidateLoaded &&
+                        !systemStopped
+                    ) {
+                        const candidateItem =
+                            items[candidateIndex];
+
+                        try {
+                            await loadWithRetry(
+                                standbySlot,
+                                candidateItem,
+                                candidateIndex
+                            );
+
+                            candidateLoaded = true;
+                        } catch (error) {
+                            console.error(
+                                `Skipping ${describeItem(candidateItem)}:`,
+                                error
+                            );
+
+                            resetSlot(standbySlot);
+
+                            candidateIndex =
+                                getNextIndex(candidateIndex);
+
+                            checkedCandidates++;
+
+                            await sleep(1500);
+                        }
+                    }
+
+                    if (!candidateLoaded) {
+                        console.error(
+                            "No next report could be loaded. " +
+                            "The current report remains visible."
+                        );
+
+                        await sleep(5000);
+                        continue;
+                    }
+
+                    /*
+                     * Rapporten skal vises i mindst rotateSeconds.
+                     *
+                     * Hvis næste rapport blev preloadet hurtigt,
+                     * venter vi resten af visningstiden.
+                     *
+                     * Hvis preload tog længere tid end visningstiden,
+                     * skifter vi straks, fordi næste rapport nu er klar.
+                     */
+                    const elapsed =
+                        Date.now() - currentShownAt;
+
+                    const remaining =
+                        Math.max(
+                            0,
+                            rotateMilliseconds - elapsed
+                        );
+
+                    if (remaining > 0) {
+                        await sleep(remaining);
+                    }
+
+                    if (systemStopped) {
+                        break;
+                    }
+
+                    await switchToStandbySlot();
+                }
+            } catch (error) {
+                console.error(
+                    "Rotation loop stopped unexpectedly:",
+                    error
+                );
+            } finally {
+                rotationRunning = false;
+            }
+        }
+
+        //////////////////////////////////////////////////////
+        // DATA REFRESH
+        //////////////////////////////////////////////////////
+
+        async function refreshActiveReport() {
+            if (
+                systemStopped ||
+                !activeSlot ||
+                !activeSlot.report
+            ) {
+                return;
+            }
+
+            try {
+                console.log(
+                    `Refreshing data for: ` +
+                    `${describeItem(activeSlot.item)}`
+                );
+
+                await activeSlot.report.refresh();
+
+                console.log(
+                    `Data refresh requested for: ` +
+                    `${describeItem(activeSlot.item)}`
+                );
+            } catch (error) {
+                /*
+                 * En mislykket data-refresh skal ikke stoppe
+                 * rotationen. Rapporten genindlæses naturligt,
+                 * næste gang den kommer ind i standby-containeren.
+                 */
+                console.error(
+                    `Data refresh failed for ` +
+                    `${describeItem(activeSlot.item)}:`,
+                    error
+                );
+            }
+        }
+
+        //////////////////////////////////////////////////////
+        // TOKEN RENEWAL
+        //////////////////////////////////////////////////////
+
+        function tokenNeedsRenewal(embedConfig) {
+            if (
+                !embedConfig ||
+                !embedConfig.tokenExpiration
+            ) {
+                return false;
+            }
+
+            const expiration =
+                new Date(embedConfig.tokenExpiration).getTime();
+
+            if (!Number.isFinite(expiration)) {
+                return false;
+            }
+
+            const renewalThreshold =
+                tokenRenewalMarginMinutes *
+                60 *
+                1000;
+
+            return (
+                expiration - Date.now() <=
+                renewalThreshold
+            );
+        }
+
+        async function renewSlotToken(slot) {
+            if (
+                systemStopped ||
+                !slot ||
+                !slot.report ||
+                !slot.item ||
+                !tokenNeedsRenewal(slot.embedConfig)
+            ) {
+                return;
+            }
+
+            try {
+                console.log(
+                    `Renewing token for: ${describeItem(slot.item)}`
+                );
+
+                const newEmbedConfig =
+                    await getEmbedConfig(slot.item);
+
+                await slot.report.setAccessToken(
+                    newEmbedConfig.accessToken
+                );
+
+                slot.embedConfig = {
+                    ...slot.embedConfig,
+                    accessToken:
+                        newEmbedConfig.accessToken,
+                    tokenExpiration:
+                        newEmbedConfig.tokenExpiration
+                };
+
+                console.log(
+                    `Token renewed for: ${describeItem(slot.item)}`
+                );
+            } catch (error) {
+                console.error(
+                    `Token renewal failed for ` +
+                    `${describeItem(slot.item)}:`,
+                    error
+                );
+            }
+        }
+
+        async function renewTokensIfNeeded() {
+            await renewSlotToken(activeSlot);
+            await renewSlotToken(standbySlot);
+        }
+
+        //////////////////////////////////////////////////////
+        // WATCHDOG
+        //////////////////////////////////////////////////////
+
+        function startWatchdog() {
+            window.setInterval(() => {
+                if (systemStopped) {
+                    return;
+                }
+
+                const timeSinceSuccessfulSwitch =
+                    Date.now() - lastSuccessfulSwitchAt;
+
+                if (
+                    timeSinceSuccessfulSwitch >
+                    watchdogMilliseconds
+                ) {
+                    systemStopped = true;
+
+                    console.error(
+                        "Watchdog triggered. " +
+                        "No successful report switch occurred within " +
+                        `${Math.round(
+                            watchdogMilliseconds / 60000
+                        )} minutes. Reloading page.`
+                    );
+
+                    setStatus(
+                        "Rotation stopped. Reloading..."
+                    );
+
+                    /*
+                     * Kort forsinkelse, så log og status kan nå
+                     * at blive skrevet før reload.
+                     */
+                    window.setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                }
+            }, 15000);
+        }
+
+        //////////////////////////////////////////////////////
+        // RESIZE
+        //////////////////////////////////////////////////////
+
+        function startResizeHandler() {
+            let resizeTimer = null;
+
+            window.addEventListener("resize", () => {
+                window.clearTimeout(resizeTimer);
+
+                resizeTimer = window.setTimeout(() => {
+                    if (
+                        activeSlot &&
+                        activeSlot.report
+                    ) {
+                        try {
+                            activeSlot.report.resize();
+                        } catch (error) {
+                            console.warn(
+                                "Power BI resize failed:",
+                                error
+                            );
+                        }
+                    }
+                }, 500);
+            });
+        }
+
+        //////////////////////////////////////////////////////
+        // INITIALIZATION
+        //////////////////////////////////////////////////////
+
+        async function initialize() {
+            accessContext = getUrlParams();
+
+            if (
+                !accessContext.device ||
+                !accessContext.key
+            ) {
+                showError(
+                    "Mangler device eller key i URL.\n\n" +
+                    "Forventet format:\n" +
+                    "?site=office" +
+                    "&device=Office-Middelfart-Screen-01" +
+                    "&key=..."
+                );
+
+                return;
+            }
+
+            const configPath =
+                `${configFolder}/${accessContext.site}.json`;
+
+            console.log(
+                "Loading site:",
+                accessContext.site
+            );
+
+            console.log(
+                "Device:",
+                accessContext.device
+            );
+
+            console.log(
+                "Config path:",
+                configPath
+            );
+
+            setLoading(
+                "Loading reports...",
+                `Site: ${accessContext.site}`
+            );
+
+            try {
+                siteConfig = await fetchJson(
+                    configPath,
+                    {
+                        cache: "no-store"
+                    }
+                );
+            } catch (error) {
+                showError(
+                    "Kunne ikke loade config:\n" +
+                    configPath +
+                    "\n\n" +
+                    error.message
+                );
+
+                return;
+            }
+
+            items =
+                Array.isArray(siteConfig.items)
+                    ? siteConfig.items
+                    : [];
+
+            if (items.length === 0) {
+                showError(
+                    "Ingen rapporter i config:\n" +
+                    configPath
+                );
+
+                return;
+            }
+
+            rotateMilliseconds =
+                normalizeNumber(
+                    siteConfig.rotateSeconds,
+                    fallbackRotateSeconds,
+                    5
+                ) * 1000;
+
+            refreshMilliseconds =
+                normalizeNumber(
+                    siteConfig.refreshMinutes,
+                    fallbackRefreshMinutes,
+                    1
+                ) * 60 * 1000;
+
+            preloadTimeoutMilliseconds =
+                normalizeNumber(
+                    siteConfig.preloadTimeoutSeconds,
+                    fallbackPreloadTimeoutSeconds,
+                    15
+                ) * 1000;
+
+            retryCount =
+                Math.floor(
+                    normalizeNumber(
+                        siteConfig.retryCount,
+                        fallbackRetryCount,
+                        0
+                    )
+                );
+
+            watchdogMilliseconds =
+                normalizeNumber(
+                    siteConfig.watchdogMinutes,
+                    fallbackWatchdogMinutes,
+                    2
+                ) * 60 * 1000;
+
+            console.log({
+                reports: items.length,
+                rotateSeconds:
+                    rotateMilliseconds / 1000,
+                refreshMinutes:
+                    refreshMilliseconds / 60000,
+                preloadTimeoutSeconds:
+                    preloadTimeoutMilliseconds / 1000,
+                retryCount,
+                watchdogMinutes:
+                    watchdogMilliseconds / 60000
+            });
+
+            activeSlot = slotA;
+            standbySlot = slotB;
+
+            const firstItem = items[0];
+
+            try {
+                setProgress(0, 1);
+
+                setStatus(
+                    `Loading: ${describeItem(firstItem)}`
+                );
+
+                await loadWithRetry(
+                    activeSlot,
+                    firstItem,
+                    0
+                );
+
+                setProgress(1, 1);
+
+                activateSlot(activeSlot);
+                deactivateSlot(standbySlot);
+
+                currentItemIndex = 0;
+                lastSuccessfulSwitchAt = Date.now();
+
+                clearError();
+                hideLoading();
+                setProgress(0, 0);
+                setStatus("");
+            } catch (error) {
+                showError(
+                    "Den første rapport kunne ikke indlæses:\n" +
+                    describeItem(firstItem) +
+                    "\n\n" +
+                    error.message
+                );
+
+                return;
+            }
+
+            /*
+             * Data-refresh er adskilt fra rotation og tokenfornyelse.
+             */
+            window.setInterval(
+                refreshActiveReport,
+                refreshMilliseconds
+            );
+
+            /*
+             * Tokenstatus kontrolleres hvert minut.
+             */
+            window.setInterval(
+                renewTokensIfNeeded,
+                60 * 1000
+            );
+
+            startWatchdog();
+            startResizeHandler();
+
+            rotationLoop();
+
+            console.log(`
+BioCirc infoscreen started
+site: ${accessContext.site}
 device: ${accessContext.device}
 reports: ${items.length}
-rotate: ${rotateSeconds}s
-refresh: ${refreshMinutes}m
-`);
-})();
-</script>
+rotate: ${rotateMilliseconds / 1000}s
+refresh: ${refreshMilliseconds / 60000}m
+preload timeout: ${preloadTimeoutMilliseconds / 1000}s
+retry count: ${retryCount}
+watchdog: ${watchdogMilliseconds / 60000}m
+            `);
+        }
 
+        initialize().catch(error => {
+            console.error(
+                "Fatal initialization error:",
+                error
+            );
+
+            showError(
+                "Infoskærmen kunne ikke startes.\n\n" +
+                error.message
+            );
+        });
+    </script>
 </body>
 </html>
