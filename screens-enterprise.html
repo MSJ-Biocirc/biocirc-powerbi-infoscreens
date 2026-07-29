@@ -36,14 +36,15 @@
         }
 
         /*
-         * Der findes altid kun to rapport-containere:
+         * Der findes kun to Power BI-containere:
          *
          * 1. Den aktive rapport
-         * 2. Den næste rapport, der preloades skjult
+         * 2. Den næste rapport, som indlæses skjult
          */
         .report-slot {
             position: absolute;
             inset: 0;
+
             width: 100vw;
             height: 100vh;
 
@@ -155,11 +156,11 @@
         #status {
             position: fixed;
             right: 16px;
-            bottom: 12px;
+            bottom: 66px;
 
             display: none;
 
-            color: rgba(255, 255, 255, 0.35);
+            color: rgba(255, 255, 255, 0.38);
 
             font-size: 12px;
 
@@ -168,6 +169,79 @@
 
         #status.visible {
             display: block;
+        }
+
+        /*
+         * Fullscreen-knap
+         */
+        #fullscreenButton {
+            position: fixed;
+            right: 18px;
+            bottom: 18px;
+            z-index: 200;
+
+            display: flex;
+            align-items: center;
+            gap: 9px;
+
+            padding: 10px 14px;
+
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            border-radius: 8px;
+
+            color: rgba(255, 255, 255, 0.9);
+            background: rgba(0, 0, 0, 0.72);
+
+            font-family: "Segoe UI", Arial, sans-serif;
+            font-size: 14px;
+
+            cursor: pointer;
+
+            opacity: 0.55;
+
+            transition:
+                opacity 180ms ease,
+                background 180ms ease,
+                border-color 180ms ease;
+        }
+
+        #fullscreenButton:hover,
+        #fullscreenButton:focus-visible {
+            opacity: 1;
+            background: rgba(0, 0, 0, 0.92);
+            border-color: rgba(255, 255, 255, 0.55);
+        }
+
+        #fullscreenButton svg {
+            width: 18px;
+            height: 18px;
+
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 1.8;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        /*
+         * Knappen skjules helt, når fullscreen er aktiv.
+         */
+        html.is-fullscreen #fullscreenButton {
+            display: none;
+        }
+
+        html.is-fullscreen #status {
+            bottom: 12px;
+        }
+
+        @media (max-width: 700px) {
+            #fullscreenButton .fullscreen-label {
+                display: none;
+            }
+
+            #fullscreenButton {
+                padding: 11px;
+            }
         }
     </style>
 </head>
@@ -181,6 +255,7 @@
     <div id="loading">
         <div id="loadingBox">
             <div id="loadingTitle">Loading reports...</div>
+
             <div id="loadingSubtitle">
                 BioCirc Power BI Infoscreen
             </div>
@@ -190,6 +265,22 @@
     <div id="progress"></div>
     <div id="error"></div>
     <div id="status"></div>
+
+    <button
+        id="fullscreenButton"
+        type="button"
+        aria-label="Vis infoskærmen i fuld skærm"
+        title="Fuld skærm"
+    >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M8 3H3v5"></path>
+            <path d="M16 3h5v5"></path>
+            <path d="M21 16v5h-5"></path>
+            <path d="M3 16v5h5"></path>
+        </svg>
+
+        <span class="fullscreen-label">Fuld skærm</span>
+    </button>
 
     <script>
         //////////////////////////////////////////////////////
@@ -202,7 +293,7 @@
         /*
          * Fallback-værdier.
          *
-         * De bruges kun, hvis værdierne ikke findes
+         * De bruges kun, hvis indstillingerne ikke findes
          * i site-configen.
          */
         const fallbackRotateSeconds = 35;
@@ -212,14 +303,14 @@
         const fallbackWatchdogMinutes = 3;
 
         /*
-         * Tokenet fornyes, hvis det udløber inden for
+         * Embed-tokenet fornyes, når det udløber inden for
          * dette antal minutter.
          */
         const tokenRenewalMarginMinutes = 5;
 
         /*
-         * Ventetid efter et visuelt skift, før den gamle
-         * Power BI-instans fjernes.
+         * Ventetid efter fade-skift, før den gamle rapport
+         * fjernes fra hukommelsen.
          */
         const transitionCleanupMilliseconds = 650;
 
@@ -227,16 +318,26 @@
         // DOM
         //////////////////////////////////////////////////////
 
-        const loadingElement = document.getElementById("loading");
+        const loadingElement =
+            document.getElementById("loading");
+
         const loadingTitleElement =
             document.getElementById("loadingTitle");
 
         const loadingSubtitleElement =
             document.getElementById("loadingSubtitle");
 
-        const errorElement = document.getElementById("error");
-        const statusElement = document.getElementById("status");
-        const progressElement = document.getElementById("progress");
+        const errorElement =
+            document.getElementById("error");
+
+        const statusElement =
+            document.getElementById("status");
+
+        const progressElement =
+            document.getElementById("progress");
+
+        const fullscreenButton =
+            document.getElementById("fullscreenButton");
 
         //////////////////////////////////////////////////////
         // RUNTIME STATE
@@ -408,7 +509,11 @@
                 return "Unknown report";
             }
 
-            return item.name || item.reportId || "Unknown report";
+            return (
+                item.name ||
+                item.reportId ||
+                "Unknown report"
+            );
         }
 
         //////////////////////////////////////////////////////
@@ -585,7 +690,8 @@
                 `Fetching embed config for ${describeItem(item)}`
             );
 
-            const embedConfig = await getEmbedConfig(item);
+            const embedConfig =
+                await getEmbedConfig(item);
 
             slot.embedConfig = embedConfig;
 
@@ -601,12 +707,12 @@
                     }
 
                     completed = true;
+
                     window.clearTimeout(timeoutId);
 
                     /*
-                     * Event-handlerne fjernes efter det første
-                     * vellykkede render, så senere refresh-events
-                     * ikke starter den samme Promise igen.
+                     * De midlertidige load-events fjernes efter
+                     * første succesfulde rendering.
                      */
                     detachSlotHandlers(slot);
 
@@ -626,8 +732,8 @@
                     }
 
                     completed = true;
-                    window.clearTimeout(timeoutId);
 
+                    window.clearTimeout(timeoutId);
                     detachSlotHandlers(slot);
 
                     const normalizedError =
@@ -643,17 +749,18 @@
                     reject(normalizedError);
                 };
 
-                const timeoutId = window.setTimeout(() => {
-                    finishWithError(
-                        new Error(
-                            `Rapporten blev ikke færdigrenderet ` +
-                            `inden for ` +
-                            `${Math.round(
-                                timeoutMilliseconds / 1000
-                            )} sekunder.`
-                        )
-                    );
-                }, timeoutMilliseconds);
+                const timeoutId =
+                    window.setTimeout(() => {
+                        finishWithError(
+                            new Error(
+                                "Rapporten blev ikke " +
+                                "færdigrenderet inden for " +
+                                `${Math.round(
+                                    timeoutMilliseconds / 1000
+                                )} sekunder.`
+                            )
+                        );
+                    }, timeoutMilliseconds);
 
                 try {
                     const report = powerbi.embed(
@@ -687,7 +794,10 @@
                                 JSON.stringify(detail);
                         } catch {
                             detailText =
-                                String(detail || "Unknown error");
+                                String(
+                                    detail ||
+                                    "Unknown error"
+                                );
                         }
 
                         finishWithError(
@@ -711,7 +821,8 @@
             item,
             itemIndex
         ) {
-            const totalAttempts = retryCount + 1;
+            const totalAttempts =
+                retryCount + 1;
 
             let lastError = null;
 
@@ -753,8 +864,11 @@
                 }
             }
 
-            throw lastError || new Error(
-                `Could not load ${describeItem(item)}`
+            throw (
+                lastError ||
+                new Error(
+                    `Could not load ${describeItem(item)}`
+                )
             );
         }
 
@@ -780,16 +894,19 @@
             deactivateSlot(previousActive);
 
             /*
-             * Swappet udføres med det samme.
+             * Slottene byttes med det samme.
              *
-             * Den gamle rapport resettes først efter fade-effekten,
-             * så skærmen ikke blinker sort under skiftet.
+             * Den gamle rapport fjernes efter fade-effekten,
+             * så der ikke kommer sort blink.
              */
             activeSlot = nextActive;
             standbySlot = previousActive;
 
-            currentItemIndex = activeSlot.itemIndex;
-            lastSuccessfulSwitchAt = Date.now();
+            currentItemIndex =
+                activeSlot.itemIndex;
+
+            lastSuccessfulSwitchAt =
+                Date.now();
 
             console.log(
                 `Now showing: ${describeItem(activeSlot.item)}`
@@ -797,7 +914,9 @@
 
             setStatus("");
 
-            await sleep(transitionCleanupMilliseconds);
+            await sleep(
+                transitionCleanupMilliseconds
+            );
 
             resetSlot(standbySlot);
         }
@@ -807,7 +926,10 @@
         //////////////////////////////////////////////////////
 
         async function rotationLoop() {
-            if (rotationRunning || systemStopped) {
+            if (
+                rotationRunning ||
+                systemStopped
+            ) {
                 return;
             }
 
@@ -816,8 +938,8 @@
             try {
                 while (!systemStopped) {
                     /*
-                     * Ved kun én rapport skal den ikke embeddes igen
-                     * ved hvert rotationsinterval.
+                     * Ved kun én rapport skal rapporten ikke
+                     * embeddes igen ved hvert interval.
                      */
                     if (items.length <= 1) {
                         await sleep(rotateMilliseconds);
@@ -834,13 +956,14 @@
                     let checkedCandidates = 0;
 
                     /*
-                     * Hvis én rapport fejler, prøver vi næste rapport.
+                     * Hvis én rapport fejler, prøves den næste.
                      *
-                     * Vi gennemgår højst alle øvrige rapporter én gang,
-                     * før vi giver kontrollen til watchdog'en.
+                     * Vi gennemgår højst alle øvrige rapporter
+                     * én gang pr. rotationsforsøg.
                      */
                     while (
-                        checkedCandidates < items.length - 1 &&
+                        checkedCandidates <
+                            items.length - 1 &&
                         !candidateLoaded &&
                         !systemStopped
                     ) {
@@ -883,13 +1006,11 @@
                     }
 
                     /*
-                     * Rapporten skal vises i mindst rotateSeconds.
+                     * Den aktuelle rapport vises i mindst
+                     * rotateSeconds.
                      *
-                     * Hvis næste rapport blev preloadet hurtigt,
-                     * venter vi resten af visningstiden.
-                     *
-                     * Hvis preload tog længere tid end visningstiden,
-                     * skifter vi straks, fordi næste rapport nu er klar.
+                     * Hvis preload tager længere tid end intervallet,
+                     * skiftes der straks, når næste rapport er klar.
                      */
                     const elapsed =
                         Date.now() - currentShownAt;
@@ -935,24 +1056,23 @@
 
             try {
                 console.log(
-                    `Refreshing data for: ` +
-                    `${describeItem(activeSlot.item)}`
+                    "Refreshing data for: " +
+                    describeItem(activeSlot.item)
                 );
 
                 await activeSlot.report.refresh();
 
                 console.log(
-                    `Data refresh requested for: ` +
-                    `${describeItem(activeSlot.item)}`
+                    "Data refresh requested for: " +
+                    describeItem(activeSlot.item)
                 );
             } catch (error) {
                 /*
-                 * En mislykket data-refresh skal ikke stoppe
-                 * rotationen. Rapporten genindlæses naturligt,
-                 * næste gang den kommer ind i standby-containeren.
+                 * En mislykket data-refresh må ikke stoppe
+                 * rapportrotationen.
                  */
                 console.error(
-                    `Data refresh failed for ` +
+                    "Data refresh failed for " +
                     `${describeItem(activeSlot.item)}:`,
                     error
                 );
@@ -972,7 +1092,9 @@
             }
 
             const expiration =
-                new Date(embedConfig.tokenExpiration).getTime();
+                new Date(
+                    embedConfig.tokenExpiration
+                ).getTime();
 
             if (!Number.isFinite(expiration)) {
                 return false;
@@ -1014,8 +1136,10 @@
 
                 slot.embedConfig = {
                     ...slot.embedConfig,
+
                     accessToken:
                         newEmbedConfig.accessToken,
+
                     tokenExpiration:
                         newEmbedConfig.tokenExpiration
                 };
@@ -1025,7 +1149,7 @@
                 );
             } catch (error) {
                 console.error(
-                    `Token renewal failed for ` +
+                    "Token renewal failed for " +
                     `${describeItem(slot.item)}:`,
                     error
                 );
@@ -1047,8 +1171,17 @@
                     return;
                 }
 
+                /*
+                 * Ved kun én rapport er der ingen rotation.
+                 * Watchdog må derfor ikke genindlæse siden.
+                 */
+                if (items.length <= 1) {
+                    return;
+                }
+
                 const timeSinceSuccessfulSwitch =
-                    Date.now() - lastSuccessfulSwitchAt;
+                    Date.now() -
+                    lastSuccessfulSwitchAt;
 
                 if (
                     timeSinceSuccessfulSwitch >
@@ -1068,15 +1201,125 @@
                         "Rotation stopped. Reloading..."
                     );
 
-                    /*
-                     * Kort forsinkelse, så log og status kan nå
-                     * at blive skrevet før reload.
-                     */
                     window.setTimeout(() => {
                         window.location.reload();
                     }, 1000);
                 }
             }, 15000);
+        }
+
+        //////////////////////////////////////////////////////
+        // FULLSCREEN
+        //////////////////////////////////////////////////////
+
+        function isFullscreenActive() {
+            return Boolean(
+                document.fullscreenElement ||
+                document.webkitFullscreenElement ||
+                document.msFullscreenElement
+            );
+        }
+
+        async function enterFullscreen() {
+            const target =
+                document.documentElement;
+
+            clearError();
+
+            try {
+                if (target.requestFullscreen) {
+                    await target.requestFullscreen();
+                } else if (
+                    target.webkitRequestFullscreen
+                ) {
+                    target.webkitRequestFullscreen();
+                } else if (
+                    target.msRequestFullscreen
+                ) {
+                    target.msRequestFullscreen();
+                } else {
+                    throw new Error(
+                        "Denne browser understøtter ikke fullscreen."
+                    );
+                }
+            } catch (error) {
+                console.error(
+                    "Could not enter fullscreen:",
+                    error
+                );
+
+                showError(
+                    "Kunne ikke åbne fuld skærm.\n\n" +
+                    "Prøv eventuelt browserens F11-tast.\n\n" +
+                    error.message
+                );
+            }
+        }
+
+        function resizePowerBiReports() {
+            const slots =
+                [activeSlot, standbySlot];
+
+            for (const slot of slots) {
+                if (
+                    !slot ||
+                    !slot.report
+                ) {
+                    continue;
+                }
+
+                try {
+                    slot.report.resize();
+                } catch (error) {
+                    console.warn(
+                        `Power BI resize failed for slot ${slot.name}:`,
+                        error
+                    );
+                }
+            }
+        }
+
+        function updateFullscreenState() {
+            const fullscreen =
+                isFullscreenActive();
+
+            document.documentElement.classList.toggle(
+                "is-fullscreen",
+                fullscreen
+            );
+
+            /*
+             * Vent på browserens fullscreen-animation,
+             * før Power BI tilpasses den nye størrelse.
+             */
+            window.setTimeout(
+                resizePowerBiReports,
+                350
+            );
+        }
+
+        function startFullscreenControls() {
+            fullscreenButton.addEventListener(
+                "click",
+                enterFullscreen
+            );
+
+            document.addEventListener(
+                "fullscreenchange",
+                updateFullscreenState
+            );
+
+            document.addEventListener(
+                "webkitfullscreenchange",
+                updateFullscreenState
+            );
+
+            document.addEventListener(
+                "MSFullscreenChange",
+                updateFullscreenState
+            );
+
+            updateFullscreenState();
         }
 
         //////////////////////////////////////////////////////
@@ -1089,21 +1332,11 @@
             window.addEventListener("resize", () => {
                 window.clearTimeout(resizeTimer);
 
-                resizeTimer = window.setTimeout(() => {
-                    if (
-                        activeSlot &&
-                        activeSlot.report
-                    ) {
-                        try {
-                            activeSlot.report.resize();
-                        } catch (error) {
-                            console.warn(
-                                "Power BI resize failed:",
-                                error
-                            );
-                        }
-                    }
-                }, 500);
+                resizeTimer =
+                    window.setTimeout(
+                        resizePowerBiReports,
+                        500
+                    );
             });
         }
 
@@ -1223,13 +1456,18 @@
 
             console.log({
                 reports: items.length,
+
                 rotateSeconds:
                     rotateMilliseconds / 1000,
+
                 refreshMinutes:
                     refreshMilliseconds / 60000,
+
                 preloadTimeoutSeconds:
                     preloadTimeoutMilliseconds / 1000,
+
                 retryCount,
+
                 watchdogMinutes:
                     watchdogMilliseconds / 60000
             });
@@ -1258,7 +1496,9 @@
                 deactivateSlot(standbySlot);
 
                 currentItemIndex = 0;
-                lastSuccessfulSwitchAt = Date.now();
+
+                lastSuccessfulSwitchAt =
+                    Date.now();
 
                 clearError();
                 hideLoading();
@@ -1276,7 +1516,8 @@
             }
 
             /*
-             * Data-refresh er adskilt fra rotation og tokenfornyelse.
+             * Data-refresh er uafhængig af rotation og
+             * tokenfornyelse.
              */
             window.setInterval(
                 refreshActiveReport,
@@ -1293,6 +1534,7 @@
 
             startWatchdog();
             startResizeHandler();
+            startFullscreenControls();
 
             rotationLoop();
 
