@@ -32,6 +32,12 @@
       "pageName": "84d96ef0c15859972137"
     },
     {
+      "name": "CCS Storage Tank Levels",
+      "reportId": "15bf1e61-483b-4602-8802-5a3f6f4de8f5",
+      "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
+      "pageName": "ceed91bf82a2e5a61000"
+    },
+    {
       "name": "Substrate Tank Level",
       "reportId": "864b9cfd-30eb-47fc-a13c-34e004db0013",
       "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2"
