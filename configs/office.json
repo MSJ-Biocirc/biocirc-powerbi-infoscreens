@@ -2,6 +2,7 @@
   "site": "office",
   "rotateSeconds": 35,
   "refreshMinutes": 15,
+  "configCheckMinutes": 60,
   "preloadTimeoutSeconds": 60,
   "retryCount": 1,
   "watchdogMinutes": 3,
