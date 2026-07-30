@@ -230,6 +230,44 @@
             bottom: 12px;
         }
 
+        /*
+         * Debug-panelet vises kun, når URL'en indeholder
+         * debug=1.
+         */
+        #debugPanel {
+            position: fixed;
+            top: 16px;
+            left: 16px;
+
+            display: none;
+
+            min-width: 310px;
+            max-width: calc(100vw - 64px);
+
+            padding: 14px 16px;
+
+            color: rgba(255, 255, 255, 0.95);
+            background: rgba(0, 0, 0, 0.82);
+
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            border-radius: 8px;
+
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 12px;
+            line-height: 1.55;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+
+            box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+
+            pointer-events: none;
+            z-index: 300;
+        }
+
+        #debugPanel.visible {
+            display: block;
+        }
+
         @media (max-width: 700px) {
             #fullscreenButton .fullscreen-label {
                 display: none;
@@ -237,6 +275,15 @@
 
             #fullscreenButton {
                 padding: 11px;
+            }
+
+            #debugPanel {
+                top: 8px;
+                left: 8px;
+                right: 8px;
+                min-width: 0;
+                max-width: none;
+                font-size: 11px;
             }
         }
     </style>
@@ -261,6 +308,7 @@
     <div id="progress"></div>
     <div id="error"></div>
     <div id="status"></div>
+    <div id="debugPanel" aria-live="polite"></div>
 
     <button
         id="fullscreenButton"
@@ -282,6 +330,8 @@
         //////////////////////////////////////////////////////
         // BASIC CONFIG
         //////////////////////////////////////////////////////
+
+        const appVersion = "1.0.0";
 
         const defaultSite = "Vesthimmerland";
         const configFolder = "configs";
@@ -330,6 +380,9 @@
         const fullscreenButton =
             document.getElementById("fullscreenButton");
 
+        const debugPanelElement =
+            document.getElementById("debugPanel");
+
         //////////////////////////////////////////////////////
         // RUNTIME STATE
         //////////////////////////////////////////////////////
@@ -353,12 +406,20 @@
         let configCheckIntervalId = null;
         let tokenCheckIntervalId = null;
         let watchdogIntervalId = null;
+        let debugIntervalId = null;
 
         let activeSlot = null;
         let standbySlot = null;
 
         let currentItemIndex = -1;
-        let lastSuccessfulSwitchAt = Date.now();
+        let lastSuccessfulSwitchAt = null;
+
+        let lastConfigCheckAt = null;
+        let lastConfigUpdateAt = null;
+        let lastDataRefreshAt = null;
+        let lastTokenRenewalAt = null;
+
+        let applicationStartedAt = Date.now();
 
         let systemStopped = false;
         let rotationRunning = false;
@@ -406,7 +467,10 @@
 
                 key:
                     parameters.get("key") ||
-                    ""
+                    "",
+
+                debug:
+                    parameters.get("debug") === "1"
             };
         }
 
@@ -555,6 +619,248 @@
             return items.findIndex(candidate => {
                 return itemsMatch(candidate, item);
             });
+        }
+
+        //////////////////////////////////////////////////////
+        // DEBUG PANEL
+        //////////////////////////////////////////////////////
+
+        function formatDebugTimestamp(value) {
+            if (!value) {
+                return "Ikke endnu";
+            }
+
+            const date =
+                value instanceof Date
+                    ? value
+                    : new Date(value);
+
+            if (!Number.isFinite(date.getTime())) {
+                return "Ukendt";
+            }
+
+            return date.toLocaleString("da-DK", {
+                day: "2-digit",
+                month: "2-digit",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit"
+            });
+        }
+
+        function formatDuration(milliseconds) {
+            if (
+                !Number.isFinite(milliseconds) ||
+                milliseconds < 0
+            ) {
+                return "Ukendt";
+            }
+
+            const totalSeconds =
+                Math.floor(milliseconds / 1000);
+
+            const days =
+                Math.floor(totalSeconds / 86400);
+
+            const hours =
+                Math.floor(
+                    (totalSeconds % 86400) / 3600
+                );
+
+            const minutes =
+                Math.floor(
+                    (totalSeconds % 3600) / 60
+                );
+
+            const seconds =
+                totalSeconds % 60;
+
+            const parts = [];
+
+            if (days > 0) {
+                parts.push(`${days}d`);
+            }
+
+            if (hours > 0 || days > 0) {
+                parts.push(`${hours}t`);
+            }
+
+            if (
+                minutes > 0 ||
+                hours > 0 ||
+                days > 0
+            ) {
+                parts.push(`${minutes}m`);
+            }
+
+            parts.push(`${seconds}s`);
+
+            return parts.join(" ");
+        }
+
+        function getRotationStatus() {
+            if (systemStopped) {
+                return "Stoppet";
+            }
+
+            if (items.length <= 1) {
+                return "Aktiv - en rapport";
+            }
+
+            if (rotationRunning) {
+                return "Aktiv";
+            }
+
+            return "Starter";
+        }
+
+        function updateDebugPanel() {
+            if (
+                !accessContext ||
+                !accessContext.debug
+            ) {
+                debugPanelElement.classList.remove(
+                    "visible"
+                );
+
+                return;
+            }
+
+            const activeItem =
+                activeSlot
+                    ? activeSlot.item
+                    : null;
+
+            const activeReportId =
+                activeItem &&
+                activeItem.reportId
+                    ? activeItem.reportId
+                    : "Ikke indlæst";
+
+            const tokenExpiration =
+                activeSlot &&
+                activeSlot.embedConfig &&
+                activeSlot.embedConfig.tokenExpiration
+                    ? activeSlot.embedConfig.tokenExpiration
+                    : null;
+
+            const lines = [
+                "BIOCIRC INFOSCREEN DEBUG",
+                "------------------------------",
+                `Version: ${appVersion}`,
+                `Site: ${accessContext.site || "Ikke angivet"}`,
+                `Device: ${accessContext.device || "Ikke angivet"}`,
+                `Key: ${accessContext.key ? "Registreret" : "Mangler"}`,
+                `Config: ${configPath || "Ikke fastlagt"}`,
+                "",
+                `Rapporter: ${items.length}`,
+                `Aktiv rapport: ${describeItem(activeItem)}`,
+                `Rapport-ID: ${activeReportId}`,
+                `Aktiv placering: ${
+                    currentItemIndex >= 0
+                        ? `${currentItemIndex + 1}/${items.length}`
+                        : "Ukendt"
+                }`,
+                "",
+                `Rotation: ${getRotationStatus()}`,
+                `Rotationsinterval: ${
+                    rotateMilliseconds
+                        ? `${rotateMilliseconds / 1000} sek.`
+                        : "Ikke indlæst"
+                }`,
+                `Configinterval: ${
+                    configCheckMilliseconds
+                        ? `${configCheckMilliseconds / 60000} min.`
+                        : "Ikke indlæst"
+                }`,
+                `Configkontrol kører: ${
+                    configCheckRunning
+                        ? "Ja"
+                        : "Nej"
+                }`,
+                `Fullscreen: ${
+                    isFullscreenActive()
+                        ? "Aktiv"
+                        : "Ikke aktiv"
+                }`,
+                "",
+                `Sidste rapportskift: ${
+                    formatDebugTimestamp(
+                        lastSuccessfulSwitchAt
+                    )
+                }`,
+                `Sidste config-kontrol: ${
+                    formatDebugTimestamp(
+                        lastConfigCheckAt
+                    )
+                }`,
+                `Sidste config-ændring: ${
+                    formatDebugTimestamp(
+                        lastConfigUpdateAt
+                    )
+                }`,
+                `Sidste data-refresh: ${
+                    formatDebugTimestamp(
+                        lastDataRefreshAt
+                    )
+                }`,
+                `Sidste tokenfornyelse: ${
+                    formatDebugTimestamp(
+                        lastTokenRenewalAt
+                    )
+                }`,
+                `Token udløber: ${
+                    formatDebugTimestamp(
+                        tokenExpiration
+                    )
+                }`,
+                "",
+                `Oppetid: ${
+                    formatDuration(
+                        Date.now() -
+                        applicationStartedAt
+                    )
+                }`
+            ];
+
+            debugPanelElement.textContent =
+                lines.join("\n");
+
+            debugPanelElement.classList.add(
+                "visible"
+            );
+        }
+
+        function startDebugPanel() {
+            if (
+                !accessContext ||
+                !accessContext.debug
+            ) {
+                debugPanelElement.classList.remove(
+                    "visible"
+                );
+
+                return;
+            }
+
+            if (debugIntervalId !== null) {
+                window.clearInterval(
+                    debugIntervalId
+                );
+            }
+
+            updateDebugPanel();
+
+            debugIntervalId =
+                window.setInterval(
+                    updateDebugPanel,
+                    1000
+                );
+
+            console.log(
+                `Debug panel enabled. Version ${appVersion}`
+            );
         }
 
         //////////////////////////////////////////////////////
@@ -964,6 +1270,8 @@
             lastSuccessfulSwitchAt =
                 Date.now();
 
+            updateDebugPanel();
+
             console.log(
                 `Now showing: ${describeItem(activeSlot.item)}`
             );
@@ -990,6 +1298,7 @@
             }
 
             rotationRunning = true;
+            updateDebugPanel();
 
             try {
                 while (!systemStopped) {
@@ -1075,9 +1384,6 @@
                             /*
                              * Kontrollér, at rapporten stadig
                              * findes i den nyeste config.
-                             *
-                             * Hvis rapporten blev fjernet under
-                             * preload, bruges den ikke.
                              */
                             const currentCandidateIndex =
                                 findItemIndex(candidateItem);
@@ -1157,6 +1463,7 @@
                 );
             } finally {
                 rotationRunning = false;
+                updateDebugPanel();
             }
         }
 
@@ -1180,6 +1487,11 @@
                 );
 
                 await activeSlot.report.refresh();
+
+                lastDataRefreshAt =
+                    Date.now();
+
+                updateDebugPanel();
 
                 console.log(
                     "Data refresh requested for: " +
@@ -1279,6 +1591,11 @@
                     tokenExpiration:
                         newEmbedConfig.tokenExpiration
                 };
+
+                lastTokenRenewalAt =
+                    Date.now();
+
+                updateDebugPanel();
 
                 console.log(
                     `Token renewed for: ${describeItem(slot.item)}`
@@ -1500,6 +1817,11 @@
             currentConfigFingerprint =
                 latestFingerprint;
 
+            lastConfigUpdateAt =
+                Date.now();
+
+            updateDebugPanel();
+
             /*
              * Genstart kun de intervaller, hvis deres
              * værdier er blevet ændret.
@@ -1552,10 +1874,6 @@
                 }
             );
 
-            /*
-             * Ingen window.location.reload().
-             * Browser-fullscreen bevares derfor.
-             */
             return true;
         }
 
@@ -1568,6 +1886,9 @@
             }
 
             configCheckRunning = true;
+            lastConfigCheckAt = Date.now();
+
+            updateDebugPanel();
 
             try {
                 console.log(
@@ -1614,6 +1935,7 @@
                 );
             } finally {
                 configCheckRunning = false;
+                updateDebugPanel();
             }
         }
 
@@ -1672,6 +1994,8 @@
                     ) {
                         systemStopped = true;
 
+                        updateDebugPanel();
+
                         console.error(
                             "Watchdog triggered. " +
                             "No successful report switch occurred within " +
@@ -1687,10 +2011,6 @@
                         /*
                          * Watchdog-reload er fortsat nødvendig,
                          * hvis rotationen reelt er gået i stå.
-                         *
-                         * En sådan reload forlader normal
-                         * browser-fullscreen. Kiosk-mode er den
-                         * permanente løsning på dét tilfælde.
                          */
                         window.setTimeout(() => {
                             window.location.reload();
@@ -1779,6 +2099,8 @@
                 fullscreen
             );
 
+            updateDebugPanel();
+
             window.setTimeout(
                 resizePowerBiReports,
                 350
@@ -1832,7 +2154,13 @@
         //////////////////////////////////////////////////////
 
         async function initialize() {
-            accessContext = getUrlParams();
+            applicationStartedAt =
+                Date.now();
+
+            accessContext =
+                getUrlParams();
+
+            startDebugPanel();
 
             if (
                 !accessContext.device ||
@@ -1851,6 +2179,8 @@
 
             configPath =
                 `${configFolder}/${accessContext.site}.json`;
+
+            updateDebugPanel();
 
             console.log(
                 "Loading site:",
@@ -1926,6 +2256,8 @@
             watchdogMilliseconds =
                 settings.watchdogMilliseconds;
 
+            updateDebugPanel();
+
             console.log({
                 reports:
                     items.length,
@@ -1976,6 +2308,8 @@
                 lastSuccessfulSwitchAt =
                     Date.now();
 
+                updateDebugPanel();
+
                 clearError();
                 hideLoading();
                 setProgress(0, 0);
@@ -2002,6 +2336,7 @@
 
             console.log(`
 BioCirc infoscreen started
+version: ${appVersion}
 site: ${accessContext.site}
 device: ${accessContext.device}
 reports: ${items.length}
