@@ -2,6 +2,10 @@
   "site": "office",
   "rotateSeconds": 35,
   "refreshMinutes": 15,
+  "configCheckMinutes": 5,
+  "preloadTimeoutSeconds": 60,
+  "retryCount": 1,
+  "watchdogMinutes": 3,
   "items": [
     {
       "name": "Methane Production",
@@ -15,49 +19,40 @@
       "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
       "pageName": "e62683aa9b1eaf33ebcf"
     },
-     {
+    {
       "name": "Gas Prices and Futures",
       "reportId": "966a01f4-7636-473a-9cd2-405a90c7698f",
       "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
       "pageName": "522bfd9d6913db99bc1e"
     },
-     {
+    {
       "name": "Gas Prices and Futures - 30 Days",
       "reportId": "966a01f4-7636-473a-9cd2-405a90c7698f",
       "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
       "pageName": "84d96ef0c15859972137"
     },
-     {
+    {
+      "name": "CCS Storage Tank Levels",
+      "reportId": "15bf1e61-483b-4602-8802-5a3f6f4de8f5",
+      "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
+      "pageName": "ceed91bf82a2e5a61000"
+    },
+    {
       "name": "Substrate Tank Level",
       "reportId": "864b9cfd-30eb-47fc-a13c-34e004db0013",
       "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2"
     },
-     {
+    {
       "name": "NAV - Drymatter Overview",
       "reportId": "45c56e4d-7787-4fa5-8ad9-39cc09a7920d",
       "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
       "pageName": "48bd107c9a728be725c"
     },
-     {
-      "name": "NAV - Drymatter Overview",
-      "reportId": "45c56e4d-7787-4fa5-8ad9-39cc09a7920d",
-      "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
-      "pageName": "48bd107c9a728be725c"
-    },
-     {
-      "name": "GrainIT - Drymatter Overview",
-      "reportId": "45c56e4d-7787-4fa5-8ad9-39cc09a7920d",
-      "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
-      "pageName": "34c280e9866e996820d4"
-    },
-     {
+    {
       "name": "GrainIT - Drymatter Overview",
       "reportId": "45c56e4d-7787-4fa5-8ad9-39cc09a7920d",
       "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
       "pageName": "34c280e9866e996820d4"
     }
   ]
-
 }
-
-

@@ -1,0 +1,11 @@
+{
+  "name": "biocirc-powerbi-infoscreens-api",
+  "version": "1.0.0",
+  "description": "Azure Functions API for BioCirc Power BI infoscreens",
+  "scripts": {
+    "build": "echo \"No API build required\""
+  },
+  "dependencies": {
+    "@azure/msal-node": "^2.16.2"
+  }
+}
