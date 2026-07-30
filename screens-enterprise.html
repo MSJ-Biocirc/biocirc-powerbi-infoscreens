@@ -160,7 +160,7 @@
 
             display: none;
 
-            color: rgba(255, 255, 255, 0.38);
+            color: rgba(255, 255, 255, 0.55);
             font-size: 12px;
 
             z-index: 70;
@@ -220,7 +220,7 @@
         }
 
         /*
-         * Knappen forsvinder helt i fullscreen.
+         * Knappen skjules, når browser-fullscreen er aktiv.
          */
         html.is-fullscreen #fullscreenButton {
             display: none;
@@ -286,12 +286,6 @@
         const defaultSite = "Vesthimmerland";
         const configFolder = "configs";
 
-        /*
-         * Fallback-værdier.
-         *
-         * De bruges, hvis en indstilling ikke findes
-         * i site-configen.
-         */
         const fallbackRotateSeconds = 35;
         const fallbackRefreshMinutes = 15;
         const fallbackConfigCheckMinutes = 60;
@@ -300,7 +294,7 @@
         const fallbackWatchdogMinutes = 3;
 
         /*
-         * Embed-tokenet fornyes, når det udløber inden for
+         * Embed-token fornyes, hvis det udløber inden for
          * dette antal minutter.
          */
         const tokenRenewalMarginMinutes = 5;
@@ -345,7 +339,7 @@
         let items = [];
 
         let configPath = "";
-        let initialConfigFingerprint = "";
+        let currentConfigFingerprint = "";
         let configCheckRunning = false;
 
         let rotateMilliseconds = 0;
@@ -354,6 +348,11 @@
         let preloadTimeoutMilliseconds = 0;
         let watchdogMilliseconds = 0;
         let retryCount = 0;
+
+        let refreshIntervalId = null;
+        let configCheckIntervalId = null;
+        let tokenCheckIntervalId = null;
+        let watchdogIntervalId = null;
 
         let activeSlot = null;
         let standbySlot = null;
@@ -389,7 +388,7 @@
         };
 
         //////////////////////////////////////////////////////
-        // HELPERS
+        // GENERAL HELPERS
         //////////////////////////////////////////////////////
 
         function getUrlParams() {
@@ -450,6 +449,19 @@
                 "visible",
                 Boolean(message)
             );
+        }
+
+        function setTemporaryStatus(
+            message,
+            durationMilliseconds = 5000
+        ) {
+            setStatus(message);
+
+            window.setTimeout(() => {
+                if (statusElement.textContent === message) {
+                    setStatus("");
+                }
+            }, durationMilliseconds);
         }
 
         function setProgress(current, total) {
@@ -518,6 +530,33 @@
             );
         }
 
+        function itemsMatch(firstItem, secondItem) {
+            if (!firstItem || !secondItem) {
+                return false;
+            }
+
+            return (
+                String(firstItem.reportId || "") ===
+                    String(secondItem.reportId || "") &&
+
+                String(firstItem.groupId || "") ===
+                    String(secondItem.groupId || "") &&
+
+                String(firstItem.pageName || "") ===
+                    String(secondItem.pageName || "")
+            );
+        }
+
+        function findItemIndex(item) {
+            if (!item) {
+                return -1;
+            }
+
+            return items.findIndex(candidate => {
+                return itemsMatch(candidate, item);
+            });
+        }
+
         //////////////////////////////////////////////////////
         // HTTP
         //////////////////////////////////////////////////////
@@ -529,7 +568,9 @@
             let body;
 
             try {
-                body = text ? JSON.parse(text) : null;
+                body = text
+                    ? JSON.parse(text)
+                    : null;
             } catch {
                 body = text;
             }
@@ -551,6 +592,19 @@
             }
 
             return body;
+        }
+
+        async function fetchSiteConfig() {
+            /*
+             * Timestamp og no-store forhindrer browser- og
+             * CDN-cache i at levere en gammel config.
+             */
+            return fetchJson(
+                `${configPath}?t=${Date.now()}`,
+                {
+                    cache: "no-store"
+                }
+            );
         }
 
         async function getEmbedConfig(item) {
@@ -619,7 +673,6 @@
 
             /*
              * pageName er valgfri.
-             *
              * Uden pageName åbnes rapportens gemte standardside.
              */
             if (embedConfig.pageName) {
@@ -889,17 +942,24 @@
             activateSlot(nextActive);
             deactivateSlot(previousActive);
 
-            /*
-             * Slottene byttes straks.
-             *
-             * Den gamle rapport fjernes efter fade-effekten,
-             * så der ikke kommer sort blink.
-             */
             activeSlot = nextActive;
             standbySlot = previousActive;
 
+            /*
+             * Find rapportens aktuelle position i den nyeste
+             * config. Dette er vigtigt, hvis configen blev
+             * ændret under preload.
+             */
+            const latestIndex =
+                findItemIndex(activeSlot.item);
+
             currentItemIndex =
-                activeSlot.itemIndex;
+                latestIndex >= 0
+                    ? latestIndex
+                    : activeSlot.itemIndex;
+
+            activeSlot.itemIndex =
+                currentItemIndex;
 
             lastSuccessfulSwitchAt =
                 Date.now();
@@ -942,6 +1002,21 @@
                         continue;
                     }
 
+                    /*
+                     * Genberegn den aktive rapports position.
+                     * Configen kan være ændret siden sidste loop.
+                     */
+                    const activeIndex =
+                        findItemIndex(
+                            activeSlot
+                                ? activeSlot.item
+                                : null
+                        );
+
+                    if (activeIndex >= 0) {
+                        currentItemIndex = activeIndex;
+                    }
+
                     const currentShownAt =
                         lastSuccessfulSwitchAt;
 
@@ -951,17 +1026,44 @@
                     let candidateLoaded = false;
                     let checkedCandidates = 0;
 
-                    /*
-                     * Hvis én rapport fejler, prøves næste rapport.
-                     */
                     while (
                         checkedCandidates <
-                            items.length - 1 &&
+                            Math.max(1, items.length) &&
                         !candidateLoaded &&
                         !systemStopped
                     ) {
+                        /*
+                         * Configen kan ændres mens loopet kører.
+                         */
+                        if (items.length === 0) {
+                            break;
+                        }
+
+                        if (candidateIndex >= items.length) {
+                            candidateIndex = 0;
+                        }
+
                         const candidateItem =
                             items[candidateIndex];
+
+                        /*
+                         * Undgå at preloade den rapport, der
+                         * allerede vises.
+                         */
+                        if (
+                            activeSlot &&
+                            itemsMatch(
+                                candidateItem,
+                                activeSlot.item
+                            ) &&
+                            items.length > 1
+                        ) {
+                            candidateIndex =
+                                getNextIndex(candidateIndex);
+
+                            checkedCandidates++;
+                            continue;
+                        }
 
                         try {
                             await loadWithRetry(
@@ -969,6 +1071,33 @@
                                 candidateItem,
                                 candidateIndex
                             );
+
+                            /*
+                             * Kontrollér, at rapporten stadig
+                             * findes i den nyeste config.
+                             *
+                             * Hvis rapporten blev fjernet under
+                             * preload, bruges den ikke.
+                             */
+                            const currentCandidateIndex =
+                                findItemIndex(candidateItem);
+
+                            if (currentCandidateIndex < 0) {
+                                console.log(
+                                    `${describeItem(candidateItem)} ` +
+                                    "was removed during preload. Skipping."
+                                );
+
+                                resetSlot(standbySlot);
+
+                                candidateIndex = 0;
+                                checkedCandidates++;
+
+                                continue;
+                            }
+
+                            standbySlot.itemIndex =
+                                currentCandidateIndex;
 
                             candidateLoaded = true;
                         } catch (error) {
@@ -1057,16 +1186,33 @@
                     describeItem(activeSlot.item)
                 );
             } catch (error) {
-                /*
-                 * En mislykket data-refresh må ikke stoppe
-                 * rotationen.
-                 */
                 console.error(
                     "Data refresh failed for " +
                     `${describeItem(activeSlot.item)}:`,
                     error
                 );
             }
+        }
+
+        function startRefreshTimer() {
+            if (refreshIntervalId !== null) {
+                window.clearInterval(
+                    refreshIntervalId
+                );
+            }
+
+            refreshIntervalId =
+                window.setInterval(
+                    refreshActiveReport,
+                    refreshMilliseconds
+                );
+
+            console.log(
+                "Data refresh timer started. " +
+                `Interval: ${
+                    refreshMilliseconds / 60000
+                } minute(s).`
+            );
         }
 
         //////////////////////////////////////////////////////
@@ -1151,8 +1297,22 @@
             await renewSlotToken(standbySlot);
         }
 
+        function startTokenTimer() {
+            if (tokenCheckIntervalId !== null) {
+                window.clearInterval(
+                    tokenCheckIntervalId
+                );
+            }
+
+            tokenCheckIntervalId =
+                window.setInterval(
+                    renewTokensIfNeeded,
+                    60 * 1000
+                );
+        }
+
         //////////////////////////////////////////////////////
-        // CONFIG CHANGE DETECTION
+        // CONFIG NORMALIZATION
         //////////////////////////////////////////////////////
 
         function createConfigFingerprint(config) {
@@ -1199,6 +1359,206 @@
             return JSON.stringify(relevantConfig);
         }
 
+        function readRuntimeSettings(config) {
+            return {
+                rotateMilliseconds:
+                    normalizeNumber(
+                        config.rotateSeconds,
+                        fallbackRotateSeconds,
+                        5
+                    ) * 1000,
+
+                refreshMilliseconds:
+                    normalizeNumber(
+                        config.refreshMinutes,
+                        fallbackRefreshMinutes,
+                        1
+                    ) * 60 * 1000,
+
+                configCheckMilliseconds:
+                    normalizeNumber(
+                        config.configCheckMinutes,
+                        fallbackConfigCheckMinutes,
+                        1
+                    ) * 60 * 1000,
+
+                preloadTimeoutMilliseconds:
+                    normalizeNumber(
+                        config.preloadTimeoutSeconds,
+                        fallbackPreloadTimeoutSeconds,
+                        15
+                    ) * 1000,
+
+                retryCount:
+                    Math.floor(
+                        normalizeNumber(
+                            config.retryCount,
+                            fallbackRetryCount,
+                            0
+                        )
+                    ),
+
+                watchdogMilliseconds:
+                    normalizeNumber(
+                        config.watchdogMinutes,
+                        fallbackWatchdogMinutes,
+                        2
+                    ) * 60 * 1000
+            };
+        }
+
+        //////////////////////////////////////////////////////
+        // LIVE CONFIG UPDATE
+        //////////////////////////////////////////////////////
+
+        function applyConfigWithoutReload(
+            latestConfig,
+            latestFingerprint
+        ) {
+            const latestItems =
+                Array.isArray(latestConfig.items)
+                    ? latestConfig.items
+                    : [];
+
+            /*
+             * En tom rapportliste kan være en fejl i configen.
+             * Behold derfor den nuværende fungerende liste.
+             */
+            if (latestItems.length === 0) {
+                console.error(
+                    "The new config contains no reports. " +
+                    "Keeping the current configuration."
+                );
+
+                setTemporaryStatus(
+                    "Ny config indeholder ingen rapporter. " +
+                    "Nuværende config beholdes.",
+                    8000
+                );
+
+                return false;
+            }
+
+            const previousRefreshMilliseconds =
+                refreshMilliseconds;
+
+            const previousConfigCheckMilliseconds =
+                configCheckMilliseconds;
+
+            /*
+             * Gem den aktive rapport, før items udskiftes.
+             */
+            const currentlyActiveItem =
+                activeSlot
+                    ? activeSlot.item
+                    : null;
+
+            siteConfig = latestConfig;
+            items = latestItems;
+
+            const settings =
+                readRuntimeSettings(latestConfig);
+
+            rotateMilliseconds =
+                settings.rotateMilliseconds;
+
+            refreshMilliseconds =
+                settings.refreshMilliseconds;
+
+            configCheckMilliseconds =
+                settings.configCheckMilliseconds;
+
+            preloadTimeoutMilliseconds =
+                settings.preloadTimeoutMilliseconds;
+
+            retryCount =
+                settings.retryCount;
+
+            watchdogMilliseconds =
+                settings.watchdogMilliseconds;
+
+            /*
+             * Find den aktive rapport i den nye liste.
+             */
+            const matchingIndex =
+                findItemIndex(currentlyActiveItem);
+
+            currentItemIndex =
+                matchingIndex >= 0
+                    ? matchingIndex
+                    : -1;
+
+            if (activeSlot) {
+                activeSlot.itemIndex =
+                    currentItemIndex;
+            }
+
+            /*
+             * Gem det nye fingerprint. Ellers vil samme
+             * ændring blive behandlet ved hver kontrol.
+             */
+            currentConfigFingerprint =
+                latestFingerprint;
+
+            /*
+             * Genstart kun de intervaller, hvis deres
+             * værdier er blevet ændret.
+             */
+            if (
+                refreshMilliseconds !==
+                previousRefreshMilliseconds
+            ) {
+                startRefreshTimer();
+            }
+
+            if (
+                configCheckMilliseconds !==
+                previousConfigCheckMilliseconds
+            ) {
+                startConfigChangeDetection();
+            }
+
+            lastSuccessfulSwitchAt =
+                Date.now();
+
+            setTemporaryStatus(
+                `Konfiguration opdateret: ` +
+                `${items.length} rapporter`,
+                5000
+            );
+
+            console.log(
+                "Configuration updated without reload.",
+                {
+                    reports:
+                        items.length,
+
+                    rotateSeconds:
+                        rotateMilliseconds / 1000,
+
+                    refreshMinutes:
+                        refreshMilliseconds / 60000,
+
+                    configCheckMinutes:
+                        configCheckMilliseconds / 60000,
+
+                    preloadTimeoutSeconds:
+                        preloadTimeoutMilliseconds / 1000,
+
+                    retryCount,
+
+                    watchdogMinutes:
+                        watchdogMilliseconds / 60000
+                }
+            );
+
+            /*
+             * Ingen window.location.reload().
+             * Browser-fullscreen bevares derfor.
+             */
+            return true;
+        }
+
         async function checkForConfigChanges() {
             if (
                 systemStopped ||
@@ -1215,17 +1575,8 @@
                     configPath
                 );
 
-                /*
-                 * Timestamp og no-store forhindrer browser- og
-                 * CDN-cache i at levere den gamle config.
-                 */
                 const latestConfig =
-                    await fetchJson(
-                        `${configPath}?t=${Date.now()}`,
-                        {
-                            cache: "no-store"
-                        }
-                    );
+                    await fetchSiteConfig();
 
                 const latestFingerprint =
                     createConfigFingerprint(
@@ -1234,22 +1585,17 @@
 
                 if (
                     latestFingerprint !==
-                    initialConfigFingerprint
+                    currentConfigFingerprint
                 ) {
                     console.log(
                         "Config change detected. " +
-                        "Reloading infoscreen."
+                        "Updating without page reload."
                     );
 
-                    systemStopped = true;
-
-                    setStatus(
-                        "Ny konfiguration fundet. Genindlæser..."
+                    applyConfigWithoutReload(
+                        latestConfig,
+                        latestFingerprint
                     );
-
-                    window.setTimeout(() => {
-                        window.location.reload();
-                    }, 1000);
 
                     return;
                 }
@@ -1259,8 +1605,8 @@
                 );
             } catch (error) {
                 /*
-                 * En mislykket kontrol må ikke stoppe skærmen.
-                 * Der prøves igen ved næste interval.
+                 * En mislykket config-kontrol må ikke stoppe
+                 * rotationen. Der prøves igen næste gang.
                  */
                 console.error(
                     "Config check failed:",
@@ -1272,10 +1618,17 @@
         }
 
         function startConfigChangeDetection() {
-            window.setInterval(
-                checkForConfigChanges,
-                configCheckMilliseconds
-            );
+            if (configCheckIntervalId !== null) {
+                window.clearInterval(
+                    configCheckIntervalId
+                );
+            }
+
+            configCheckIntervalId =
+                window.setInterval(
+                    checkForConfigChanges,
+                    configCheckMilliseconds
+                );
 
             console.log(
                 "Config change detection started. " +
@@ -1290,45 +1643,60 @@
         //////////////////////////////////////////////////////
 
         function startWatchdog() {
-            window.setInterval(() => {
-                if (systemStopped) {
-                    return;
-                }
+            if (watchdogIntervalId !== null) {
+                window.clearInterval(
+                    watchdogIntervalId
+                );
+            }
 
-                /*
-                 * Ved én rapport sker der ikke rotation.
-                 */
-                if (items.length <= 1) {
-                    return;
-                }
+            watchdogIntervalId =
+                window.setInterval(() => {
+                    if (systemStopped) {
+                        return;
+                    }
 
-                const timeSinceSuccessfulSwitch =
-                    Date.now() -
-                    lastSuccessfulSwitchAt;
+                    /*
+                     * Ved én rapport sker der ikke rotation.
+                     */
+                    if (items.length <= 1) {
+                        return;
+                    }
 
-                if (
-                    timeSinceSuccessfulSwitch >
-                    watchdogMilliseconds
-                ) {
-                    systemStopped = true;
+                    const timeSinceSuccessfulSwitch =
+                        Date.now() -
+                        lastSuccessfulSwitchAt;
 
-                    console.error(
-                        "Watchdog triggered. " +
-                        "No successful report switch occurred within " +
-                        `${Math.round(
-                            watchdogMilliseconds / 60000
-                        )} minutes. Reloading page.`
-                    );
+                    if (
+                        timeSinceSuccessfulSwitch >
+                        watchdogMilliseconds
+                    ) {
+                        systemStopped = true;
 
-                    setStatus(
-                        "Rotation stopped. Reloading..."
-                    );
+                        console.error(
+                            "Watchdog triggered. " +
+                            "No successful report switch occurred within " +
+                            `${Math.round(
+                                watchdogMilliseconds / 60000
+                            )} minutes. Reloading page.`
+                        );
 
-                    window.setTimeout(() => {
-                        window.location.reload();
-                    }, 1000);
-                }
-            }, 15000);
+                        setStatus(
+                            "Rotation stoppet. Genindlæser..."
+                        );
+
+                        /*
+                         * Watchdog-reload er fortsat nødvendig,
+                         * hvis rotationen reelt er gået i stå.
+                         *
+                         * En sådan reload forlader normal
+                         * browser-fullscreen. Kiosk-mode er den
+                         * permanente løsning på dét tilfælde.
+                         */
+                        window.setTimeout(() => {
+                            window.location.reload();
+                        }, 1000);
+                    }
+                }, 15000);
         }
 
         //////////////////////////////////////////////////////
@@ -1474,7 +1842,7 @@
                     "Mangler device eller key i URL.\n\n" +
                     "Forventet format:\n" +
                     "?site=office" +
-                    "&device=Office-Middelfart-Screen-01" +
+                    "&device=Office-Screen-01" +
                     "&key=..."
                 );
 
@@ -1505,18 +1873,10 @@
             );
 
             try {
-                siteConfig = await fetchJson(
-                    `${configPath}?t=${Date.now()}`,
-                    {
-                        cache: "no-store"
-                    }
-                );
+                siteConfig =
+                    await fetchSiteConfig();
 
-                /*
-                 * Gem den oprindelige config som fingerprint.
-                 * Senere kontroller sammenlignes med denne.
-                 */
-                initialConfigFingerprint =
+                currentConfigFingerprint =
                     createConfigFingerprint(
                         siteConfig
                     );
@@ -1545,49 +1905,26 @@
                 return;
             }
 
+            const settings =
+                readRuntimeSettings(siteConfig);
+
             rotateMilliseconds =
-                normalizeNumber(
-                    siteConfig.rotateSeconds,
-                    fallbackRotateSeconds,
-                    5
-                ) * 1000;
+                settings.rotateMilliseconds;
 
             refreshMilliseconds =
-                normalizeNumber(
-                    siteConfig.refreshMinutes,
-                    fallbackRefreshMinutes,
-                    1
-                ) * 60 * 1000;
+                settings.refreshMilliseconds;
 
             configCheckMilliseconds =
-                normalizeNumber(
-                    siteConfig.configCheckMinutes,
-                    fallbackConfigCheckMinutes,
-                    1
-                ) * 60 * 1000;
+                settings.configCheckMilliseconds;
 
             preloadTimeoutMilliseconds =
-                normalizeNumber(
-                    siteConfig.preloadTimeoutSeconds,
-                    fallbackPreloadTimeoutSeconds,
-                    15
-                ) * 1000;
+                settings.preloadTimeoutMilliseconds;
 
             retryCount =
-                Math.floor(
-                    normalizeNumber(
-                        siteConfig.retryCount,
-                        fallbackRetryCount,
-                        0
-                    )
-                );
+                settings.retryCount;
 
             watchdogMilliseconds =
-                normalizeNumber(
-                    siteConfig.watchdogMinutes,
-                    fallbackWatchdogMinutes,
-                    2
-                ) * 60 * 1000;
+                settings.watchdogMilliseconds;
 
             console.log({
                 reports:
@@ -1654,22 +1991,8 @@
                 return;
             }
 
-            /*
-             * Data-refresh er uafhængig af rotation.
-             */
-            window.setInterval(
-                refreshActiveReport,
-                refreshMilliseconds
-            );
-
-            /*
-             * Tokenstatus kontrolleres hvert minut.
-             */
-            window.setInterval(
-                renewTokensIfNeeded,
-                60 * 1000
-            );
-
+            startRefreshTimer();
+            startTokenTimer();
             startWatchdog();
             startResizeHandler();
             startFullscreenControls();
