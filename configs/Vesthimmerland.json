@@ -1,13 +1,23 @@
 {
   "site": "Vesthimmerland",
-  "rotateSeconds": 15,
-  "refreshMinutes": 15,
+  "rotateSeconds": 35,
+  "refreshMinutes": 45,
+  "configCheckMinutes": 5,
+  "preloadTimeoutSeconds": 60,
+  "retryCount": 1,
+  "watchdogMinutes": 3,
   "items": [
     {
       "name": "Methane Production",
       "reportId": "6e8f43d2-a635-4e70-bf0d-fd700e0ed0ed",
       "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
       "pageName": "ReportSectionf24e0e543456b82cf561"
+    },
+    {
+      "name": "CCS Storage Tank Level",
+      "reportId": "15bf1e61-483b-4602-8802-5a3f6f4de8f5",
+      "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
+      "pageName": "dd3de0ce5b389e6d76ba"
     },
     {
       "name": "Process Analysis - Acid Analysis",
@@ -27,6 +37,12 @@
       "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
       "pageName": "2f8e1f340ed0a6363882"
     },
+      {
+      "name": "DM Overview",
+      "reportId": "61c45565-7465-413f-8407-49c56a2a152d",
+      "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
+      "pageName": "612f2ef90a500d48ea49"
+    },
      {
       "name": "Gas Prices and Futures",
       "reportId": "966a01f4-7636-473a-9cd2-405a90c7698f",
@@ -38,6 +54,12 @@
       "reportId": "73f539e5-5847-440d-97d8-ea606c98d851",
       "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
       "pageName": "66704585b705aa087077"
+    },
+    {
+      "name": "QHSE Infoscreen",
+      "reportId": "e1024573-87b7-4b62-ab2d-b3c06ed6e4a2",
+      "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
+      "pageName": "ReportSectione48bd107c9a728be725c"
     }
 
   ]
