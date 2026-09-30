@@ -3,11 +3,11 @@ name: Azure Static Web Apps CI/CD
 on:
   push:
     branches:
-      - enterprise-embed-poc
+      - main
   pull_request:
     types: [opened, synchronize, reopened, closed]
     branches:
-      - enterprise-embed-poc
+      - main
 
 jobs:
   build_and_deploy_job:
