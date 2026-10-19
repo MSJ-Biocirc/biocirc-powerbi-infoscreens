@@ -338,6 +338,7 @@
 
         const fallbackRotateSeconds = 35;
         const fallbackRefreshMinutes = 15;
+        const fallbackFullReloadHours = 3;
         const fallbackConfigCheckMinutes = 60;
         const fallbackPreloadTimeoutSeconds = 60;
         const fallbackRetryCount = 1;
@@ -397,12 +398,14 @@
 
         let rotateMilliseconds = 0;
         let refreshMilliseconds = 0;
+        let fullReloadMilliseconds = 0;
         let configCheckMilliseconds = 0;
         let preloadTimeoutMilliseconds = 0;
         let watchdogMilliseconds = 0;
         let retryCount = 0;
 
         let refreshIntervalId = null;
+        let fullReloadTimeoutId = null;
         let configCheckIntervalId = null;
         let tokenCheckIntervalId = null;
         let watchdogIntervalId = null;
@@ -1643,6 +1646,9 @@
                 refreshMinutes:
                     config.refreshMinutes,
 
+                fullReloadHours:
+                    config.fullReloadHours,
+
                 configCheckMinutes:
                     config.configCheckMinutes,
 
@@ -1691,6 +1697,13 @@
                         fallbackRefreshMinutes,
                         1
                     ) * 60 * 1000,
+
+                fullReloadMilliseconds:
+                    normalizeNumber(
+                        config.fullReloadHours,
+                        fallbackFullReloadHours,
+                        1
+                    ) * 60 * 60 * 1000,
 
                 configCheckMilliseconds:
                     normalizeNumber(
@@ -1759,6 +1772,9 @@
             const previousRefreshMilliseconds =
                 refreshMilliseconds;
 
+            const previousFullReloadMilliseconds =
+                fullReloadMilliseconds;
+
             const previousConfigCheckMilliseconds =
                 configCheckMilliseconds;
 
@@ -1781,6 +1797,9 @@
 
             refreshMilliseconds =
                 settings.refreshMilliseconds;
+
+            fullReloadMilliseconds =
+                settings.fullReloadMilliseconds;
 
             configCheckMilliseconds =
                 settings.configCheckMilliseconds;
@@ -1838,6 +1857,13 @@
                 previousConfigCheckMilliseconds
             ) {
                 startConfigChangeDetection();
+            }
+
+            if (
+                fullReloadMilliseconds !==
+                previousFullReloadMilliseconds
+            ) {
+                startFullReloadTimer();
             }
 
             lastSuccessfulSwitchAt =
@@ -1958,6 +1984,33 @@
                     configCheckMilliseconds / 60000
                 } minute(s).`
             );
+        }
+
+        //////////////////////////////////////////////////////
+        // SCHEDULED FULL PAGE RELOAD
+        //////////////////////////////////////////////////////
+
+        function startFullReloadTimer() {
+            if (fullReloadTimeoutId !== null) {
+                window.clearTimeout(fullReloadTimeoutId);
+                fullReloadTimeoutId = null;
+            }
+
+            if (!Number.isFinite(fullReloadMilliseconds) ||
+                fullReloadMilliseconds <= 0) {
+                console.warn("Invalid full reload interval.");
+                return;
+            }
+
+            console.log(
+                `Next full page reload in ${fullReloadMilliseconds / 3600000} hours.`
+            );
+
+            fullReloadTimeoutId = window.setTimeout(() => {
+                if (systemStopped) return;
+                setStatus("Genindlæser infoskærmen...");
+                window.location.reload();
+            }, fullReloadMilliseconds);
         }
 
         //////////////////////////////////////////////////////
@@ -2244,6 +2297,9 @@
             refreshMilliseconds =
                 settings.refreshMilliseconds;
 
+            fullReloadMilliseconds =
+                settings.fullReloadMilliseconds;
+
             configCheckMilliseconds =
                 settings.configCheckMilliseconds;
 
@@ -2331,6 +2387,7 @@
             startResizeHandler();
             startFullscreenControls();
             startConfigChangeDetection();
+            startFullReloadTimer();
 
             rotationLoop();
 
