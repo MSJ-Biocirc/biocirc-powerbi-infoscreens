@@ -402,6 +402,7 @@
         let configCheckMilliseconds = 0;
         let preloadTimeoutMilliseconds = 0;
         let watchdogMilliseconds = 0;
+        let lowMemoryMode = false;
         let retryCount = 0;
 
         let refreshIntervalId = null;
@@ -767,6 +768,7 @@
                 }`,
                 "",
                 `Rotation: ${getRotationStatus()}`,
+                `Low Memory Mode: ${lowMemoryMode ? "Aktiv" : "Fra"}`,
                 `Rotationsinterval: ${
                     rotateMilliseconds
                         ? `${rotateMilliseconds / 1000} sek.`
@@ -1292,6 +1294,39 @@
         // ROTATION LOOP
         //////////////////////////////////////////////////////
 
+        async function lowMemoryRotationStep() {
+            const elapsed = Date.now() - lastSuccessfulSwitchAt;
+            await sleep(Math.max(0, rotateMilliseconds - elapsed));
+            if (systemStopped || items.length <= 1) return;
+            const activeIndex = findItemIndex(activeSlot.item);
+            if (activeIndex >= 0) currentItemIndex = activeIndex;
+            let candidateIndex = getNextIndex(currentItemIndex);
+            resetSlot(activeSlot);
+            setStatus("Indlæser næste rapport...");
+            for (let attempt = 0; attempt < items.length && !systemStopped; attempt++) {
+                if (candidateIndex >= items.length) candidateIndex = 0;
+                const item = items[candidateIndex];
+                try {
+                    await loadWithRetry(standbySlot, item, candidateIndex);
+                    const index = findItemIndex(item);
+                    if (index < 0) {
+                        resetSlot(standbySlot);
+                        candidateIndex = 0;
+                        continue;
+                    }
+                    standbySlot.itemIndex = index;
+                    await switchToStandbySlot();
+                    return;
+                } catch (error) {
+                    console.error("Low Memory Mode load failed:", error);
+                    resetSlot(standbySlot);
+                    candidateIndex = getNextIndex(candidateIndex);
+                    await sleep(1500);
+                }
+            }
+            await sleep(5000);
+        }
+
         async function rotationLoop() {
             if (
                 rotationRunning ||
@@ -1311,6 +1346,11 @@
                      */
                     if (items.length <= 1) {
                         await sleep(rotateMilliseconds);
+                        continue;
+                    }
+
+                    if (lowMemoryMode) {
+                        await lowMemoryRotationStep();
                         continue;
                     }
 
@@ -1649,6 +1689,9 @@
                 fullReloadHours:
                     config.fullReloadHours,
 
+                lowMemoryMode:
+                    config.lowMemoryMode === true,
+
                 configCheckMinutes:
                     config.configCheckMinutes,
 
@@ -1697,6 +1740,9 @@
                         fallbackRefreshMinutes,
                         1
                     ) * 60 * 1000,
+
+                lowMemoryMode:
+                    config.lowMemoryMode === true,
 
                 fullReloadMilliseconds:
                     normalizeNumber(
@@ -1812,6 +1858,8 @@
 
             watchdogMilliseconds =
                 settings.watchdogMilliseconds;
+
+            lowMemoryMode = settings.lowMemoryMode;
 
             /*
              * Find den aktive rapport i den nye liste.
@@ -2311,6 +2359,8 @@
 
             watchdogMilliseconds =
                 settings.watchdogMilliseconds;
+
+            lowMemoryMode = settings.lowMemoryMode;
 
             updateDebugPanel();
 
