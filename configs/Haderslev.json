@@ -5,7 +5,8 @@
   "configCheckMinutes": 5,
   "preloadTimeoutSeconds": 60,
   "retryCount": 1,
-  "watchdogMinutes": 3,
+  "watchdogMinutes": 5,
+  "fullReloadHours": 1,
   "items": [
     {
       "name": "Methane Production",
