@@ -14,7 +14,7 @@
       "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
       "pageName": "ReportSectionf24e0e543456b82cf561"
     },
-     {
+    {
       "name": "CCS Storage Tank Level",
       "reportId": "15bf1e61-483b-4602-8802-5a3f6f4de8f5",
       "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
@@ -32,7 +32,7 @@
       "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
       "pageName": "0335b7c069c7164327d1"
     },
-     {
+    {
       "name": "Dry Matter Quality Overview",
       "reportId": "45c56e4d-7787-4fa5-8ad9-39cc09a7920d",
       "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
@@ -44,13 +44,13 @@
       "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
       "pageName": "612f2ef90a500d48ea49"
     },
-     {
+    {
       "name": "Gas Prices and Futures",
       "reportId": "966a01f4-7636-473a-9cd2-405a90c7698f",
       "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
       "pageName": "522bfd9d6913db99bc1e"
     },
-     {
+    {
       "name": "QHSE - Hændelser",
       "reportId": "73f539e5-5847-440d-97d8-ea606c98d851",
       "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
@@ -62,6 +62,6 @@
       "groupId": "74ea54f3-4876-478b-830e-588e8bc983d2",
       "pageName": "ReportSectione48bd107c9a728be725c"
     }
-
-  ]
+  ],
+  "lowMemoryMode": true
 }
